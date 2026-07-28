@@ -68,7 +68,8 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 ### Testing & verification
 
 - [x] `app/tests/` — unit tests for the scoring algorithm (hand-crafted ARPAbet cases) and `TestClient` smoke tests (phrases, attempts, history, stats) with an isolated data dir and synthetic WAV audio
-- [x] Full pytest suite passing (`uv run pytest`)
+- [x] **Frontend test coverage** — `app/tests/test_frontend.py`, 26 headless-Chromium tests via `pytest-playwright` (marker: `frontend`) driving the real shipped `frontend/` files: header/`/api/me` rendering, phrase loading + difficulty filter + failure path, the full record → stop → submit flow, per-word feedback rendering for all four statuses (correct/mispronounced/missing/extra) including phoneme tooltips, history and stats with their empty/error states. Deliberately does **not** start the FastAPI app — a `ThreadingHTTPServer` serves `frontend/` and an `ApiMock` fixture intercepts every `/api/*` call in the browser, so no Whisper/G2p model is ever loaded (~15s vs. ~40s). Chromium runs with `--use-fake-device-for-media-stream`, so the genuine `getUserMedia` + `MediaRecorder` path is exercised rather than stubbed. Server-side frontend wiring (auth gating on `/`, static assets served, `/docs` ungated, plus a contract test asserting every `getElementById` in `app.js` has a matching `id` in `index.html`) lives in `test_auth.py`. One-time setup: `uv run playwright install chromium`.
+- [x] Full pytest suite passing (`uv run pytest`) — 49 tests
 - [x] Native run verified end-to-end via curl (phrases, random, attempt submission, history, stats)
 - [ ] **Manual verification in a real browser**: grant mic permission, record real speech, confirm transcription and scoring behave sensibly on both correct and mispronounced attempts — not yet confirmed by the user. Automated tests use synthetic non-speech audio (silence/sine tone), which validates the pipeline mechanically but can't validate transcription/scoring accuracy on real speech.
 
@@ -117,6 +118,7 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 - [ ] On click, toggle a dropdown menu containing a "Logout" option that navigates to `/auth/logout`
 - [ ] Close the menu on outside click, on `Escape`, and on selecting an item; keep it keyboard-reachable (focusable trigger, `aria-expanded`, arrow/`Escape` handling)
 - [ ] Style in `style.css` to match the existing look; no new dependencies (vanilla JS, see the Frontend decision above)
+- [ ] Update the `loadCurrentUser` tests in `app/tests/test_frontend.py` — they assert on the current inline "Logged in as X · Logout" markup and will fail once it's replaced; add coverage for the new open/close, outside-click, and `Escape` behaviour while there
 
 ### User preferences (not started, depends on Authentication)
 

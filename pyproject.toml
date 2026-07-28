@@ -17,8 +17,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-playwright>=0.7.1",
     "ruff>=0.16.0",
 ]
 
 [tool.fastapi]
 entrypoint = "app.main:app"
+
+[tool.pytest.ini_options]
+markers = [
+    "frontend: browser-driven frontend tests (need `playwright install chromium`)",
+]
