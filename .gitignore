@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# App runtime data (SQLite DB, recorded audio, model caches)
+data/
+
+# Env files
+.env
+
+# Ruff
+.ruff_cache/
+
+# Local Claude Code settings
+.claude/settings.local.json
