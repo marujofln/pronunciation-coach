@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pronunciation Coach</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<header>
+  <h1>Pronunciation Coach</h1>
+  <p class="subtitle">Practice your English pronunciation and get instant feedback.</p>
+</header>
+
+<main>
+  <section class="card" id="phrase-card">
+    <div class="phrase-controls">
+      <label for="difficulty-select">Difficulty</label>
+      <select id="difficulty-select">
+        <option value="">Any</option>
+        <option value="easy">Easy</option>
+        <option value="medium">Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+      <button id="new-phrase-btn" type="button">New phrase</button>
+    </div>
+
+    <div id="phrase-display">
+      <p class="phrase-text" id="phrase-text">Loading a phrase…</p>
+      <div class="badges">
+        <span class="badge" id="phrase-difficulty"></span>
+        <span class="badge" id="phrase-category"></span>
+      </div>
+    </div>
+
+    <div class="record-controls">
+      <button id="record-btn" type="button">● Record</button>
+      <audio id="preview" controls></audio>
+      <button id="submit-btn" type="button" disabled>Submit</button>
+    </div>
+    <p id="status-line" class="status-line"></p>
+  </section>
+
+  <section class="card" id="results-card" hidden>
+    <h2>Result</h2>
+    <p class="overall-score">Score: <span id="overall-score">–</span></p>
+    <p class="feedback-words" id="feedback-words"></p>
+    <p class="transcript">You said: “<span id="transcript-text"></span>”</p>
+  </section>
+
+  <section class="card" id="stats-card">
+    <h2>Your progress</h2>
+    <p id="stats-summary">No attempts yet.</p>
+  </section>
+
+  <section class="card" id="history-card">
+    <h2>Recent attempts</h2>
+    <ul id="history-list"></ul>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
