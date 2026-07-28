@@ -22,10 +22,28 @@ const els = {
   transcriptText: document.getElementById("transcript-text"),
   statsSummary: document.getElementById("stats-summary"),
   historyList: document.getElementById("history-list"),
+  authStatus: document.getElementById("auth-status"),
 };
 
 function setStatus(message) {
   els.statusLine.textContent = message || "";
+}
+
+async function loadCurrentUser() {
+  try {
+    const res = await fetch("/api/me");
+    if (!res.ok) return;
+    const me = await res.json();
+    const label = me.email || `user #${me.id}`;
+    els.authStatus.textContent = "";
+    els.authStatus.appendChild(document.createTextNode(`Logged in as ${label} · `));
+    const logoutLink = document.createElement("a");
+    logoutLink.href = "/auth/logout";
+    logoutLink.textContent = "Logout";
+    els.authStatus.appendChild(logoutLink);
+  } catch {
+    // non-fatal — leave the header blank
+  }
 }
 
 async function loadRandomPhrase() {
@@ -209,6 +227,7 @@ els.difficultySelect.addEventListener("change", loadRandomPhrase);
 els.recordBtn.addEventListener("click", toggleRecording);
 els.submitBtn.addEventListener("click", submitAttempt);
 
+loadCurrentUser();
 loadRandomPhrase();
 loadHistory();
 loadStats();

@@ -55,6 +55,16 @@ header h1 {
   color: var(--muted);
 }
 
+.auth-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.auth-status a {
+  color: var(--accent);
+}
+
 main {
   max-width: 640px;
   margin: 0 auto;
