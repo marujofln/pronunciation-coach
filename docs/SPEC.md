@@ -16,6 +16,7 @@ A local, single-user web app for practicing English pronunciation: pick a phrase
 - Backend is FastAPI, following the `fastapi` skill's conventions (Annotated dependencies, no Ellipsis defaults, no RootModel, return-type-driven serialization, router-level prefix/tags, SQLModel, uv for dependency management).
 - User authentication: authenticate users against an external authentication server (OAuth2/OIDC) — preferably open-source, easy to integrate with this FastAPI + plain-JS stack, and free of charge. Supersedes the original v0.0.1 "no auth, single local user" scope (see Authentication checklist below).
 - Persist each authenticated user's choices (e.g. their difficulty/category filter selection) in the database, tied to their account, so preferences carry over between visits.
+- User menu in the frontend: a user icon in the top-right corner of the logged-in screen; hovering it shows the logged-in user; clicking it opens a menu with a "Logout" option that ends the session. Supersedes the current inline "Logged in as X · Logout" header text (see User menu checklist below).
 - A "speak" button lets the user listen to the correct pronunciation of the target phrase (reference audio, not their own recording).
 - Hover-to-listen: hovering over a word for N seconds plays that word's correct pronunciation on its own.
 - Runs on CPU only (no GPU dependency).
@@ -109,6 +110,14 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 
 
 
+### User menu (frontend, not started, depends on Authentication)
+
+- [ ] Replace the current inline "Logged in as X · Logout" header text in `frontend/index.html` / `app.js` with a user icon anchored to the top-right of the logged-in screen
+- [ ] On hover, show the logged-in user (email/name from the existing `/api/me` call) — a `title` tooltip or a small custom tooltip
+- [ ] On click, toggle a dropdown menu containing a "Logout" option that navigates to `/auth/logout`
+- [ ] Close the menu on outside click, on `Escape`, and on selecting an item; keep it keyboard-reachable (focusable trigger, `aria-expanded`, arrow/`Escape` handling)
+- [ ] Style in `style.css` to match the existing look; no new dependencies (vanilla JS, see the Frontend decision above)
+
 ### User preferences (not started, depends on Authentication)
 
 - [ ] Add a `UserPreference` (or similar) table keyed by authenticated user ID
@@ -144,6 +153,7 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 
 - [ ] Manual real-microphone pronunciation test in a browser (see Testing & verification above) — the one requirement that still needs a human to confirm.
 - [ ] Stand up Authentik and complete manual login/logout verification in a browser (see Authentication checklist above) — code is implemented and tested, but needs a human to bootstrap the real auth server and click through the flow.
+- [ ] User menu with a top-right user icon, hover-to-show logged-in user, and click-to-logout (see User menu checklist above) — not yet started.
 - [ ] Persist user choices in the database (see User preferences checklist above) — not yet started, depends on authentication being in place first.
 - [ ] Speak button + hover-to-listen TTS (see Audio playback / TTS checklist above) — not yet started.
 - [ ] Migrate from SQLite to PostgreSQL with Alembic-managed schema (see Database checklist above) — not yet started.
