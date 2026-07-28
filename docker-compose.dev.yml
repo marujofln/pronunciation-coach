@@ -1,0 +1,114 @@
+# Standalone development stack: the whole app + a fully auto-configured
+# Authentik, no manual UI clicking or .env setup required.
+#
+# Usage:
+#   echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts   # one-time, see README
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+# ALL secrets below are hardcoded, non-random, dev-only placeholders on
+# purpose - this file is meant to be safe to commit and share. NEVER reuse
+# any of these values for a real/shared/internet-facing deployment; use the
+# regular docker-compose.yml + README's "Authentication setup" for that.
+#
+# This is a full duplicate of docker-compose.yml's services, not an override
+# layer, and uses its own volume names so it never collides with data from
+# the regular docker-compose.yml stack on the same machine. It also runs
+# under its own Compose project name (below) - without this, both files
+# default to the same project name (the directory name) and Compose treats
+# them as the SAME project, so a `down` here would stop/remove the *other*
+# file's same-named containers too.
+name: pronunciation-coach-dev
+
+x-dev-secrets:
+  session_secret: &dev_session_secret dev-insecure-session-secret-do-not-use-in-production
+  authentik_secret_key: &dev_authentik_secret_key dev-insecure-authentik-secret-key-do-not-use-in-production
+  pg_password: &dev_pg_password dev-insecure-postgres-password
+  client_id: &dev_client_id dev-oauth-client-id
+  client_secret: &dev_client_secret dev-oauth-client-secret
+
+services:
+  pronunciation-coach:
+    build: .
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      WHISPER_MODEL_SIZE: small.en
+      WHISPER_COMPUTE_TYPE: int8
+      SESSION_SECRET_KEY: *dev_session_secret
+      AUTHENTIK_ISSUER: http://authentik-server:9000/application/o/pronunciation-coach/
+      AUTHENTIK_CLIENT_ID: *dev_client_id
+      AUTHENTIK_CLIENT_SECRET: *dev_client_secret
+    depends_on:
+      - authentik-server
+    restart: unless-stopped
+
+  authentik-db:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: *dev_pg_password
+    volumes:
+      - authentik-db-data-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  authentik-server:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.6}
+    command: server
+    restart: unless-stopped
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: *dev_authentik_secret_key
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: *dev_pg_password
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - authentik-media-dev:/data
+      - ./authentik-blueprints:/blueprints/custom:ro
+    shm_size: 512mb
+
+  authentik-worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.6}
+    command: worker
+    restart: unless-stopped
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: *dev_authentik_secret_key
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: *dev_pg_password
+      # Only read on first startup, against a fresh authentik-db-data-dev
+      # volume - auto-creates the akadmin superuser, skipping the manual
+      # /if/flow/initial-setup/ step.
+      AUTHENTIK_BOOTSTRAP_PASSWORD: dev-insecure-akadmin-password
+      AUTHENTIK_BOOTSTRAP_EMAIL: akadmin@localhost
+      # Read by the blueprint in ./authentik-blueprints via !Env - must match
+      # the pronunciation-coach service's own AUTHENTIK_CLIENT_ID/SECRET above.
+      AUTHENTIK_CLIENT_ID: *dev_client_id
+      AUTHENTIK_CLIENT_SECRET: *dev_client_secret
+    volumes:
+      - authentik-media-dev:/data
+      - ./authentik-blueprints:/blueprints/custom:ro
+    shm_size: 512mb
+
+volumes:
+  authentik-db-data-dev:
+  authentik-media-dev:

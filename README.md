@@ -87,6 +87,19 @@ Visiting the app now redirects to Authentik's login page if you don't already ha
 
 **Upgrading an existing local install**: this release added a `user` table and a required `Attempt.user_id` column. There's no migration tooling yet (see `docs/SPEC.md`'s Database/Alembic entry) — delete `data/pronunciation_coach.db` before your first run on the new schema; it's recreated (and reseeded) automatically.
 
+## Development stack (fully automated)
+
+For local development/testing, `docker-compose.dev.yml` brings up the *entire* stack — the app and Authentik — with Authentik's OIDC Provider + Application created automatically via an [Authentik blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints/pronunciation-coach.yaml`). No manual UI clicking, no `.env` setup.
+
+```bash
+echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts   # one-time, same reason as above
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+That's it — visiting `http://localhost:8000` redirects straight into a working login. The `akadmin` password is `dev-insecure-akadmin-password` if you want to poke around the Authentik admin UI at `http://authentik-server:9000`.
+
+**This file's secrets are hardcoded, non-random, dev-only placeholders on purpose** — safe to commit, safe to share, and clearly named so they can't be mistaken for something real (`dev-insecure-...`). Never reuse any value from it for a real or shared deployment; use the regular `docker-compose.yml` + the "Authentication setup" section above for that. It's a full standalone duplicate of `docker-compose.yml` (not an override layer) with its own volume names, so both stacks can coexist on the same machine without colliding — bring one down (`docker compose [-f docker-compose.dev.yml] down`) before starting the other if you're switching between them, since they both publish the same host ports (8000, 9000, 9443).
+
 ## Configuration
 
 All configuration is via environment variables (see `app/config.py`), settable either natively or in `docker-compose.yml`:
@@ -134,4 +147,7 @@ frontend/
 └── style.css
 Dockerfile
 docker-compose.yml
+docker-compose.dev.yml   # standalone dev stack, Authentik auto-configured
+authentik-blueprints/
+└── pronunciation-coach.yaml   # declarative OIDC Provider + Application for the dev stack
 ```

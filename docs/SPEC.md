@@ -88,12 +88,13 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 - [x] `docker-compose.yml` (port mapping, bind-mounted `data/`, `HOST_UID`/`HOST_GID` so container-written files aren't root-owned)
 - [x] `.dockerignore`
 - [x] Build and full end-to-end verification through the running container (API, frontend, and a submitted attempt all confirmed working)
+- [x] `docker-compose.dev.yml` — standalone full-stack dev variant with Authentik auto-configured via an `authentik-blueprints/pronunciation-coach.yaml` blueprint (OAuth2 Provider + Application created declaratively, `AUTHENTIK_BOOTSTRAP_PASSWORD`/`AUTHENTIK_BOOTSTRAP_EMAIL` auto-create `akadmin`) — no manual UI setup. Bootstrap + migrations + blueprint application verified against a real Authentik instance; the blueprint also explicitly sets `grant_types: [authorization_code]` — without it, Authentik rejects every `/application/o/authorize/` request with "Invalid grant_type for provider" (it's not implied by `client_type`, and defaults to empty). Full flow re-verified end-to-end: an authorize request now correctly reaches Authentik's login flow instead of bouncing back with `error=invalid_request`.
 
 
 
 ### Versioning
 
-- [x] Project versioned as `0.0.1` in `pyproject.toml` / `uv.lock`
+- [x] Project versioned as `0.1.0` in `pyproject.toml` / `uv.lock` (bumped from `0.0.1` once authentication and the automated dev stack landed)
 
 
 
