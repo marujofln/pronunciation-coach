@@ -10,36 +10,57 @@ A local web app for practicing English pronunciation. Pick a phrase, record your
 - **Attempt history** — every recording, transcript, and score is saved, with a running average and per-phrase stats.
 - **No build step** — the frontend is plain HTML/CSS/JS served directly by FastAPI.
 
-## Requirements
-
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- `ffmpeg` (used by faster-whisper's audio decoding)
-
 No GPU required — the default model is tuned for CPU inference.
 
-## Getting started
+## Getting started (Docker, preferred)
+
+The preferred way to run the app is via Docker — it needs nothing installed locally besides Docker itself.
+
+**Requirements:** Docker and Docker Compose.
+
+```bash
+HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d --build
+```
+
+Or, to avoid typing that every time, put it in a `.env` file in the project root (gitignored, machine-specific) and just run `docker compose up -d`:
+
+```bash
+echo "HOST_UID=$(id -u)" >> .env
+echo "HOST_GID=$(id -g)" >> .env
+docker compose up -d
+```
+
+`HOST_UID`/`HOST_GID` make the container run as your host user rather than root, so files written into the bind-mounted `data/` dir (the SQLite DB, saved recordings) are owned by you, not `root`.
+
+Open http://localhost:8000, allow microphone access, and start recording.
+
+On first run, the app downloads the Whisper model (~150MB) and nltk's `cmudict`/POS-tagger data into `data/` (bind-mounted from the host) — this needs internet access once, after which everything runs offline, even across container rebuilds.
+
+Useful commands: `docker compose logs -f` (tail logs), `docker compose down` (stop and remove the container), `docker compose up -d --build` (rebuild after changing dependencies or code).
+
+## Getting started (native, for development)
+
+Running natively with `uv` is faster to iterate on when editing code, since `fastapi dev` gives you auto-reload.
+
+**Requirements:** Python 3.12+, [uv](https://docs.astral.sh/uv/), `ffmpeg` (used by faster-whisper's audio decoding).
 
 ```bash
 uv sync
 uv run fastapi dev
 ```
 
-Open http://localhost:8000, allow microphone access, and start recording.
-
-On first run, the app downloads the Whisper model (~150MB) and nltk's `cmudict`/POS-tagger data into `data/` — this needs internet access once, after which everything runs offline.
-
-For a production-style run (no auto-reload): `uv run fastapi run`.
+Same first-run download behavior as above, into the same `data/` dir either way. For a production-style native run (no auto-reload): `uv run fastapi run`.
 
 ## Configuration
 
-All configuration is via environment variables (see `app/config.py`):
+All configuration is via environment variables (see `app/config.py`), settable either natively or in `docker-compose.yml`:
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `WHISPER_MODEL_SIZE` | `small.en` | faster-whisper model size (e.g. `base.en`, `medium.en`) |
 | `WHISPER_COMPUTE_TYPE` | `int8` | CTranslate2 compute type |
 | `PRONUNCIATION_COACH_DATA_DIR` | `./data` | Root directory for the SQLite DB, saved recordings, and model/nltk caches |
+| `HOST_UID` / `HOST_GID` | `1000` / `1000` | Docker only — UID/GID the container runs as, so bind-mounted files match your host user |
 
 ## Development
 
@@ -69,4 +90,6 @@ frontend/
 ├── index.html
 ├── app.js            # recording, submission, results rendering
 └── style.css
+Dockerfile
+docker-compose.yml
 ```

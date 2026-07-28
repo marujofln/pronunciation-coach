@@ -4,10 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+Docker is the preferred way to *run* the app (see `Dockerfile` / `docker-compose.yml`); `uv` is for local development (tests, lint, editing with reload).
+
 ```bash
+HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d --build   # build + run (preferred)
+docker compose logs -f                                             # tail logs
+docker compose down                                                 # stop and remove
+
 uv sync                    # install/update dependencies
 uv run fastapi dev         # dev server with reload (entrypoint from [tool.fastapi] in pyproject.toml)
-uv run fastapi run         # production server
+uv run fastapi run         # production server, native
 uv run pytest              # run all tests
 uv run pytest app/tests/test_scoring.py::test_identical_text_scores_100   # single test
 uv run ruff check .        # lint
@@ -31,5 +37,7 @@ This is a local, single-user FastAPI app: record yourself saying an English phra
 **Frontend**: plain HTML/CSS/JS in `frontend/`, no bundler. Served via FastAPI's `app.frontend("/", directory=...)`, a low-priority static route mounted *after* the API routers in `app/main.py` so it never shadows `/api/*`.
 
 **Data model** (`app/models.py`): `Phrase` (unique `text`, `difficulty`, `category`) and `Attempt` (FK to phrase, `transcript`, `score`, `word_feedback` stored as a JSON column). `app/seed_data.py` seeds ~50 built-in phrases idempotently on every startup, keyed off the unique `text` column.
+
+**Docker**: `docker-compose.yml` bind-mounts `./data:/app/data`, so the SQLite DB and downloaded Whisper/nltk caches are shared between Docker and native runs and survive container rebuilds. The container runs as `${HOST_UID}:${HOST_GID}` (defaulting to 1000:1000) rather than root, specifically so files written into that bind mount are owned by the host user instead of `root` — set `HOST_UID`/`HOST_GID` (e.g. via a gitignored `.env`) to your actual `id -u`/`id -g` if they differ from 1000.
 
 **Test isolation** (`app/tests/conftest.py`): sets `PRONUNCIATION_COACH_DATA_DIR` to a fresh temp dir as top-level module code — this must run before `app.config` (and therefore `app.main`) is imported anywhere, including by other test files, which is why it happens before any other import in the file. The session-scoped `client` fixture then runs the app's real lifespan via `with TestClient(app)`, so tests exercise real model loading and startup seeding, not mocks.
