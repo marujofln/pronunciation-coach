@@ -55,3 +55,8 @@ class StatsRead(BaseModel):
     total_attempts: int
     average_score: float | None
     per_phrase: list[PhraseStats]
+
+
+class UserRead(BaseModel):
+    id: int
+    email: str | None
