@@ -54,7 +54,7 @@ The seeded categories started out as everyday-conversation topics only — `gree
 
 **Terminology — `legal`, not `justice`.** The lawyers' professional domain and register is *legal* in English ("legal English", "legal counsel", "legal department", "legal advice"). *Justice* names the abstract ideal or the institution (the court system, a Supreme Court Justice), not the field of practice — a category called `justice` would read as a civics topic rather than a vocabulary set for practising lawyers. Hence the slug `legal`.
 
-**Naming convention**: lowercase, hyphenated, no spaces. This isn't cosmetic — `loadCategories()` in `frontend/app.js` uses the API string as both `option.value` and `option.textContent`, so the slug *is* the visible label until a prettifier is added (see the checklist below).
+**Naming convention**: lowercase, hyphenated, no spaces. The slug is the API contract — it's the `?category=` query value and what a `UserPreference` row stores — while `categoryLabel()` in `frontend/app.js` derives the display text from it (sentence case, hyphens to spaces), so nothing needs a hand-maintained slug → label map.
 
 **Full set (20 categories).** Everyday conversation: `greetings`, `small-talk`, `food`, `travel`, `weather`, `tongue-twisters`. Professional/domain registers: `information-technology`, `medical`, `legal`, `finance`, `business`, `education`, `science`, `engineering`, `customer-service`, `job-interview`, `public-speaking`. Phonetics drills: `minimal-pairs`, `numbers-and-dates`, `idioms`.
 
@@ -70,7 +70,7 @@ The seeded categories started out as everyday-conversation topics only — `gree
 - [x] `app/config.py` (env-driven paths, self-contained `data/` dir) and `app/db.py` (SQLModel engine/session)
 - [x] `app/models.py` — `Phrase` and `Attempt` SQLModel tables
 - [x] `app/schemas.py` — API request/response models (`WordFeedback`, `PhraseRead`, `AttemptRead`, `AttemptResult`, `StatsRead`)
-- [x] `app/seed_data.py` — ~50 seeded phrases across difficulty/category, idempotent seeding
+- [x] `app/seed_data.py` — 133 seeded phrases across 20 categories × 3 difficulties, idempotent seeding (see Practice phrase categories below)
 - [x] `app/ml.py` — Whisper (`small.en`, CPU, int8) and G2p model loading, once at startup, nltk `<3.9` compatibility fix
 - [x] `app/scoring.py` — normalization, per-word G2P, `difflib` word alignment, phoneme edit-distance scoring
 - [x] `app/routers/phrases.py` and `app/routers/attempts.py` — all endpoints
@@ -83,7 +83,7 @@ The seeded categories started out as everyday-conversation topics only — `gree
 
 - [x] `app/tests/` — unit tests for the scoring algorithm (hand-crafted ARPAbet cases) and `TestClient` smoke tests (phrases, attempts, history, stats) with an isolated data dir and synthetic WAV audio
 - [x] **Frontend test coverage** — `app/tests/test_frontend.py`, 26 headless-Chromium tests via `pytest-playwright` (marker: `frontend`) driving the real shipped `frontend/` files: header/`/api/me` rendering, phrase loading + difficulty filter + failure path, the full record → stop → submit flow, per-word feedback rendering for all four statuses (correct/mispronounced/missing/extra) including phoneme tooltips, history and stats with their empty/error states. Deliberately does **not** start the FastAPI app — a `ThreadingHTTPServer` serves `frontend/` and an `ApiMock` fixture intercepts every `/api/*` call in the browser, so no Whisper/G2p model is ever loaded (~15s vs. ~40s). Chromium runs with `--use-fake-device-for-media-stream`, so the genuine `getUserMedia` + `MediaRecorder` path is exercised rather than stubbed. Server-side frontend wiring (auth gating on `/`, static assets served, `/docs` ungated, plus a contract test asserting every `getElementById` in `app.js` has a matching `id` in `index.html`) lives in `test_auth.py`. One-time setup: `uv run playwright install chromium`.
-- [x] Full pytest suite passing (`uv run pytest`) — 73 tests
+- [x] Full pytest suite passing (`uv run pytest`) — 79 tests
 - [x] Native run verified end-to-end via curl (phrases, random, attempt submission, history, stats)
 - [ ] **Manual verification in a real browser**: grant mic permission, record real speech, confirm transcription and scoring behave sensibly on both correct and mispronounced attempts — not yet confirmed by the user. Automated tests use synthetic non-speech audio (silence/sine tone), which validates the pipeline mechanically but can't validate transcription/scoring accuracy on real speech.
 
@@ -145,11 +145,11 @@ The seeded categories started out as everyday-conversation topics only — `gree
 
 
 
-### Practice phrase categories (not started)
+### Practice phrase categories
 
-Twelve new categories plus one rename, taking the seeded set from 8 to 20 (see the Decisions entry above for the rationale and the `legal`-vs-`justice` terminology note). Purely a data change — `Phrase.category` is a free-form nullable string with no enum or FK, and `GET /api/phrases/categories` derives the dropdown from whatever is in the table.
+Twelve new categories plus one rename, taking the seeded set from 8 to 20 and the phrase count from 52 to **133** (see the Decisions entry above for the rationale and the `legal`-vs-`justice` terminology note). Almost purely a data change — `Phrase.category` is a free-form nullable string with no enum or FK, and `GET /api/phrases/categories` derives the dropdown from whatever is in the table.
 
-- [ ] **Professional / domain registers** — nine new categories in `app/seed_data.py`:
+- [x] **Professional / domain registers** — nine new categories in `app/seed_data.py`:
   - `medical` — symptoms, appointments, prescriptions, diagnoses. Greek/Latin polysyllables, silent letters (`pneumonia`, `psychiatry`), stress that moves under suffixation
   - `legal` — contracts, liability, testimony, jurisdiction, litigation. Latinate vocabulary and long noun phrases (the lawyers' register; see the terminology note in Decisions)
   - `finance` — interest rates, invoices, quarterly results, mortgages. Number-heavy phrasing, `-tion`/`-ial` endings
@@ -159,16 +159,17 @@ Twelve new categories plus one rename, taking the seeded set from 8 to 20 (see t
   - `customer-service` — complaints, refunds, apologies, escalation. Polite intonation, modal-heavy sentences
   - `job-interview` — strengths, experience, availability, salary expectations. Self-presentation register
   - `public-speaking` — presentations, transitions, summarising, handling Q&A. Sentence-level prosody and pacing
-- [ ] **Phonetics drill sets** — three new categories:
+- [x] **Phonetics drill sets** — three new categories:
   - `minimal-pairs` — `ship`/`sheep`, `bat`/`bad`, `think`/`sink`, `rice`/`lice`, `full`/`fool`. The contrasts the phoneme-level scorer exists to catch and that Whisper's LM is likeliest to autocorrect past
   - `numbers-and-dates` — prices, phone numbers, years, ordinals, times; `thirteen`/`thirty` stress and `-th` endings
   - `idioms` — fixed expressions where connected speech and rhythm matter more than any individual word
-- [ ] **Rename `technology` → `information-technology`** — retag the 7 existing rows and broaden them from consumer gadgets to the workplace IT register (deployment, latency, repository, authentication). Add a `UserPreference` fix-up (`UPDATE user_preference SET category = 'information-technology' WHERE category = 'technology'`) to the Alembic migration work in the Database section
-- [ ] **Seed ~6 phrases per new category** (2 easy / 2 medium / 2 hard) following the existing `{"text", "difficulty": Difficulty.x, "category"}` dict shape and the `# --- easy/medium/hard ---` banner grouping in `app/seed_data.py` — roughly 72 new phrases, ~124 total. Seeding stays idempotent (keyed on the unique `text` column), so adding entries is safe against an existing DB
-- [ ] **Give every category at least one phrase at each difficulty**, so no filter combination 404s from `/api/phrases/random`. Today's data doesn't hold to this: `greetings` is easy-only, `food` has no hard phrase, and `tongue-twisters` is hard-only, so `hard`+`greetings`, `hard`+`food` and `easy`+`tongue-twisters` all currently return "No phrase matches the given filters". Backfill those three while adding the new categories
-- [ ] **Frontend label prettifying** — `loadCategories()` in `frontend/app.js` currently uses the raw slug as the option label, which reads acceptably for `food` but poorly for `information-technology` and `numbers-and-dates`. Map hyphens to spaces and title-case for `option.textContent` only; `option.value` keeps the raw slug so the API contract, the saved preference values and `hasOption()` are all untouched
-- [ ] **Refresh the stale counts** — "~50 seeded phrases" in the Core app checklist above and in `CLAUDE.md`, plus the explicit category list in `README.md` (which enumerates all 8 current categories by name and goes wrong the moment this lands)
-- [ ] **Test updates** — only two tests touch the real seed data: `app/tests/test_api.py`'s `assert len(phrases) >= 40` (still passes; raise the bound) and `app/tests/test_preferences.py`'s `assert "tongue-twisters" in categories` (unaffected — that category stays). The Playwright `DEFAULT_CATEGORIES` in `app/tests/conftest.py` is mock data and needs no change. Worth adding: a test asserting every seeded category has at least one phrase per difficulty, so the gap above can't silently come back
+- [x] **Rename `technology` → `information-technology`** — the 7 existing rows retagged, plus three new workplace-register phrases (deployment, authentication, latency, containerized infrastructure) so the category isn't only consumer gadgets
+- [x] **Reconcile existing rows on seed** — the wrinkle the rename exposed: `seed_phrases()` is idempotent *keyed on `text`*, so editing a seeded phrase's category or difficulty never reached an existing `data/pronunciation_coach.db` — it would have shown **both** `technology` and `information-technology` in the dropdown forever. `seed_phrases()` now also updates any existing row whose `(category, difficulty)` drifted from the seed list, making the seed data authoritative for the rows it owns. Stored preferences needed the same treatment: `rename_technology_preferences()` (called from `app/main.py`'s lifespan, alongside seeding) carries a saved `"technology"` filter across the rename. Explicitly a stopgap — it carries a docstring saying to delete it once the equivalent Alembic data migration ships. Without it the frontend degrades safely (`hasOption()` falls back to "Any") but silently discards a choice the user did make
+- [x] **Seed ~6 phrases per new category** (2 easy / 2 medium / 2 hard) following the existing `{"text", "difficulty": Difficulty.x, "category"}` dict shape — 133 phrases total, 44 easy / 45 medium / 44 hard. `app/seed_data.py` is now grouped by **category** rather than by difficulty (one `# --- <category> ---` banner each, easy → medium → hard inside): at 20 categories the old difficulty banners scattered each category across three distant blocks and made the coverage rule below impossible to eyeball. Entry order only determines insert order (and therefore `id`) on a fresh DB, and nothing asserts either
+- [x] **Give every category at least one phrase at each difficulty**, so no filter combination 404s from `/api/phrases/random`. The three pre-existing gaps are backfilled: `greetings` gained a medium and a hard, `food` a hard, `tongue-twisters` an easy and a medium — `hard`+`greetings`, `hard`+`food` and `easy`+`tongue-twisters` used to return "No phrase matches the given filters"
+- [x] **Frontend label prettifying** — `categoryLabel()` in `frontend/app.js` maps hyphens to spaces and applies **sentence** case ("Information technology", "Numbers and dates"), not title case, which would capitalize the joiners ("Numbers And Dates"). Applied to both the select's `option.textContent` and the phrase badge in `renderPhrase()`; `option.value` keeps the raw slug, so the `?category=` query, the stored preference values and `hasOption()` are all untouched
+- [x] **Refresh the stale counts** — `README.md` (phrase count + the category list, now grouped by the three themes) and `CLAUDE.md` (count, plus a note on the reconcile behaviour, since "idempotent, keyed off the unique `text` column" was only half the story)
+- [x] **Test updates** — `app/tests/test_api.py`'s bound raised to `>= 120`, plus a **coverage-matrix test** asserting all 20 × 3 category/difficulty combinations return 200 (the regression guard that keeps the gap from coming back) and one asserting the rename actually applied. New `app/tests/test_seed_data.py` covers the seed list's internal consistency (unique texts, lowercase-hyphenated slugs, full coverage) and both reconcile paths — a retagged phrase is fixed up without inserting a duplicate, and a stored `"technology"` preference is renamed. In `test_frontend.py`, a new test asserts the prettified label while the option value stays the slug; the Playwright mock's `DEFAULT_CATEGORIES` gained `information-technology` (and `DEFAULT_PHRASE`'s category became the real `tongue-twisters` slug instead of `"tongue twister"`) so the mocks match what the API actually returns. Suite now 79 tests
 
 
 
@@ -199,6 +200,6 @@ Twelve new categories plus one rename, taking the seeded set from 8 to 20 (see t
 - [ ] Manual real-microphone pronunciation test in a browser (see Testing & verification above) — the one requirement that still needs a human to confirm.
 - [ ] Stand up Authentik and complete manual login/logout verification in a browser (see Authentication checklist above) — code is implemented and tested, but needs a human to bootstrap the real auth server and click through the flow.
 - [x] Persist user choices in the database (see User preferences checklist above) — done: `UserPreference` table, `GET`/`PUT /api/me/preferences`, and difficulty + category selects restored on load.
-- [ ] Expand the practice-phrase categories from 8 to 20 — professional registers (medical, legal, information-technology, …) plus phonetics drill sets (see Practice phrase categories checklist above) — not yet started.
+- [x] Expand the practice-phrase categories from 8 to 20 — professional registers (medical, legal, information-technology, …) plus phonetics drill sets (see Practice phrase categories checklist above) — done: 133 phrases, every category covering all three difficulties.
 - [ ] Speak button + hover-to-listen TTS (see Audio playback / TTS checklist above) — not yet started.
 - [ ] Migrate from SQLite to PostgreSQL with Alembic-managed schema (see Database checklist above) — not yet started.

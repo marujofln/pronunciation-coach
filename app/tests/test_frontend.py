@@ -176,7 +176,7 @@ def test_renders_random_phrase(page: Page, frontend_server: str, api: ApiMock):
 
     expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
     expect(page.locator("#phrase-difficulty")).to_have_text("hard")
-    expect(page.locator("#phrase-category")).to_have_text("tongue twister")
+    expect(page.locator("#phrase-category")).to_have_text("Tongue twisters")
     expect(page.locator("#phrase-category")).to_be_visible()
 
 
@@ -223,6 +223,16 @@ def test_category_select_is_populated_from_the_api(
     expect(options).to_have_count(len(DEFAULT_CATEGORIES) + 1)  # + the "Any" option
     assert options.first.get_attribute("value") == ""
     expect(page.locator("#category-select")).to_have_value("")
+
+
+def test_category_labels_are_prettified_but_values_stay_slugs(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """The slug is what the API filters on; only the visible label is cleaned up."""
+    open_app(page, frontend_server)
+
+    option = page.locator("#category-select option[value='information-technology']")
+    expect(option).to_have_text("Information technology")
 
 
 def test_saved_preferences_are_restored_on_load(

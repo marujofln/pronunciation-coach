@@ -132,10 +132,17 @@ DEFAULT_PHRASE = {
     "id": 7,
     "text": "She sells seashells by the seashore",
     "difficulty": "hard",
-    "category": "tongue twister",
+    "category": "tongue-twisters",
     "created_at": "2026-01-01T00:00:00",
 }
-DEFAULT_CATEGORIES = ["food", "greetings", "tongue-twisters"]
+# Hyphenated slugs, as the real API returns them — the frontend prettifies them
+# for display while keeping the slug as the option value.
+DEFAULT_CATEGORIES = [
+    "food",
+    "greetings",
+    "information-technology",
+    "tongue-twisters",
+]
 DEFAULT_PREFERENCES = {"difficulty": None, "category": None}
 DEFAULT_STATS = {"total_attempts": 0, "average_score": None, "per_phrase": []}
 DEFAULT_RESULT = {
