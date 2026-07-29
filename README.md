@@ -93,8 +93,11 @@ For local development/testing, `docker-compose.dev.yml` brings up the *entire* s
 
 ```bash
 echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts   # one-time, same reason as above
+git switch dev
 docker compose -f docker-compose.dev.yml up -d --build
 ```
+
+The app service builds the working tree rather than a pinned ref, so the stack runs whatever is checked out — uncommitted edits included. Day-to-day work lands on the `dev` branch, which is why the snippet switches to it first; `master` only receives explicitly requested pushes.
 
 That's it — visiting `http://localhost:8000` redirects straight into a working login. The `akadmin` password is `dev-insecure-akadmin-password` if you want to poke around the Authentik admin UI at `http://authentik-server:9000`.
 

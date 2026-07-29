@@ -3,7 +3,13 @@
 #
 # Usage:
 #   echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts   # one-time, see README
+#   git switch dev
 #   docker compose -f docker-compose.dev.yml up -d --build
+#
+# The app service builds the *working tree*, not a pinned ref, so whatever is
+# checked out is what runs - including uncommitted edits, which is the point of
+# a dev stack. Day-to-day work lands on the `dev` branch, so switch to it first;
+# `master` only receives explicitly requested pushes.
 #
 # ALL secrets below are hardcoded, non-random, dev-only placeholders on
 # purpose - this file is meant to be safe to commit and share. NEVER reuse
@@ -28,6 +34,7 @@ x-dev-secrets:
 
 services:
   pronunciation-coach:
+    # Working tree, so this is the `dev` branch's code when dev is checked out.
     build: .
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     ports:
