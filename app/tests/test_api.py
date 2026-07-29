@@ -46,6 +46,17 @@ def test_every_category_covers_every_difficulty(client):
     assert empty == []
 
 
+def test_categories_lists_distinct_seeded_categories(client):
+    res = client.get("/api/phrases/categories")
+    assert res.status_code == 200
+    categories = res.json()
+
+    assert "tongue-twisters" in categories
+    assert len(categories) == len(set(categories))
+    assert categories == sorted(categories)
+    assert None not in categories
+
+
 def test_technology_category_was_renamed(client):
     categories = client.get("/api/phrases/categories").json()
 

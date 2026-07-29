@@ -29,16 +29,6 @@ TEST_DATABASE_URL = _EXTERNAL_DATABASE_URL or (
 )
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
-# Dummy auth config: authlib only fetches OIDC metadata lazily, on the first
-# call to authorize_redirect/authorize_access_token — no test exercises the
-# real login flow, so these values are never actually used over the network.
-os.environ.setdefault("SESSION_SECRET_KEY", "test-session-secret")
-os.environ.setdefault(
-    "AUTHENTIK_ISSUER", "http://authentik.invalid/application/o/test/"
-)
-os.environ.setdefault("AUTHENTIK_CLIENT_ID", "test-client-id")
-os.environ.setdefault("AUTHENTIK_CLIENT_SECRET", "test-client-secret")
-
 import threading
 from dataclasses import dataclass, field
 from functools import partial
@@ -50,14 +40,11 @@ import pytest
 from fastapi.testclient import TestClient
 from playwright.sync_api import Page, Route
 from sqlalchemy import make_url, text
-from sqlmodel import Session
 
 from app import config
-from app.auth import get_current_user
 from app.db import engine
 from app.main import app
 from app.ml import load_g2p
-from app.models import User
 
 
 def _reset_schema() -> None:
@@ -65,9 +52,8 @@ def _reset_schema() -> None:
 
     A no-op for a container this session just started; load-bearing for the
     PRONUNCIATION_COACH_TEST_DATABASE_URL path, where the database survives
-    between runs. Several tests assert *exact* row counts and several insert
-    users with a hard-coded unique `sub` — both break on the second run against
-    a database that kept its rows.
+    between runs. Several tests assert *exact* row counts, which breaks on the
+    second run against a database that kept its rows.
     """
     database_name = make_url(TEST_DATABASE_URL).database or ""
     if "test" not in database_name:
@@ -128,15 +114,9 @@ def database():
 
 @pytest.fixture(scope="session")
 def client(database):
+    """The real app, lifespan and all — so Whisper and G2p load exactly once."""
     with TestClient(app) as test_client:
-        with Session(engine) as session:
-            user = User(sub="test-sub", email="tester@example.com")
-            session.add(user)
-            session.commit()
-            session.refresh(user)
-        app.dependency_overrides[get_current_user] = lambda: user
         yield test_client
-        app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture(scope="session")
@@ -231,7 +211,6 @@ class RecordedRequest:
     post_data: bytes | None
 
 
-DEFAULT_ME = {"id": 1, "email": "tester@example.com"}
 DEFAULT_PHRASE = {
     "id": 7,
     "text": "She sells seashells by the seashore",
@@ -247,7 +226,6 @@ DEFAULT_CATEGORIES = [
     "information-technology",
     "tongue-twisters",
 ]
-DEFAULT_PREFERENCES = {"difficulty": None, "category": None}
 DEFAULT_STATS = {"total_attempts": 0, "average_score": None, "per_phrase": []}
 DEFAULT_RESULT = {
     "attempt_id": 1,
@@ -269,8 +247,6 @@ class ApiMock:
     (use a callable when successive calls to one endpoint must differ).
     """
 
-    me: Any = field(default_factory=lambda: dict(DEFAULT_ME))
-    preferences: Any = field(default_factory=lambda: dict(DEFAULT_PREFERENCES))
     categories: Any = field(default_factory=lambda: list(DEFAULT_CATEGORIES))
     phrase: Any = field(default_factory=lambda: dict(DEFAULT_PHRASE))
     attempts: Any = field(default_factory=list)
@@ -289,10 +265,6 @@ class ApiMock:
         return [r for r in self.requests if r.path == path]
 
     def _slot_for(self, recorded: RecordedRequest) -> Any:
-        if recorded.path == "/api/me":
-            return self.me
-        if recorded.path == "/api/me/preferences":
-            return self.preferences
         if recorded.path == "/api/phrases/categories":
             return self.categories
         if recorded.path == "/api/phrases/random":
@@ -331,7 +303,7 @@ class ApiMock:
 def api(page: Page) -> ApiMock:
     """Intercept /api/* before anything navigates.
 
-    app.js kicks off loadCurrentUser/loadRandomPhrase/loadHistory/loadStats at
+    app.js kicks off loadCategories/loadRandomPhrase/loadHistory/loadStats at
     load time, so routing must already be installed when page.goto() runs.
     """
     mock = ApiMock()

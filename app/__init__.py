@@ -6,7 +6,7 @@ SQLModel.metadata before app/models.py is imported. This module is the only
 place guaranteed to run first: importing anything under `app.` imports `app`.
 
 What this actually buys, on this schema: deterministic primary- and foreign-key
-names (`pk_phrase`, `fk_attempt_user_id_app_user`) instead of dialect-generated
+names (`pk_phrase`, `fk_attempt_phrase_id_phrase`) instead of dialect-generated
 ones, so a future migration can `op.drop_constraint()` by name without looking
 it up in psql. The `ix` template matches SQLAlchemy's own default, and `uq`
 never fires — every unique field here is also indexed, which renders as a single

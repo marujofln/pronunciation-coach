@@ -25,9 +25,29 @@ pytestmark = pytest.mark.frontend
 # app.js writes an en dash as the placeholder for an empty phoneme list.
 EN_DASH = "–"
 
+PREFS_KEY = "pronunciation-coach:preferences"
+
 
 def open_app(page: Page, frontend_server: str) -> None:
     page.goto(frontend_server)
+
+
+def seed_preferences(page: Page, raw: str) -> None:
+    """Put a stored preferences value in place before app.js ever runs.
+
+    An init script rather than goto/set/reload, so the page still loads exactly
+    once and the "the *first* phrase request already carries the filters"
+    assertions keep their meaning. The try/catch is required: the script also
+    runs on about:blank, where touching localStorage throws.
+    """
+    page.add_init_script(
+        f"try {{ localStorage.setItem({json.dumps(PREFS_KEY)}, {json.dumps(raw)}) }}"
+        " catch (e) {}"
+    )
+
+
+def stored_preferences(page: Page) -> str | None:
+    return page.evaluate(f"localStorage.getItem({json.dumps(PREFS_KEY)})")
 
 
 def record_clip(page: Page) -> None:
@@ -41,134 +61,6 @@ def record_clip(page: Page) -> None:
     page.wait_for_timeout(300)  # let the fake mic produce some audio
     page.click("#record-btn")
     expect(page.locator("#submit-btn")).to_be_enabled()
-
-
-# --- user menu / loadCurrentUser -----------------------------------------
-
-
-def test_user_menu_shows_logged_in_user_on_hover(
-    page: Page, frontend_server: str, api: ApiMock
-):
-    open_app(page, frontend_server)
-    expect(page.locator("#user-menu")).to_be_visible()
-
-    # The tooltip is always in the DOM; hovering is what makes it opaque.
-    page.hover("#user-menu-btn")
-
-    tooltip = page.locator("#user-tooltip")
-    expect(tooltip).to_have_text("tester@example.com")
-    expect(tooltip).to_have_css("opacity", "1")
-
-
-def test_user_menu_falls_back_to_user_id(
-    page: Page, frontend_server: str, api: ApiMock
-):
-    api.me = {"id": 42, "email": None}
-    open_app(page, frontend_server)
-
-    expect(page.locator("#user-tooltip")).to_have_text("user #42")
-    page.click("#user-menu-btn")
-    expect(page.locator("#user-dropdown-email")).to_have_text("user #42")
-
-
-def test_user_menu_hidden_when_me_fails(page: Page, frontend_server: str, api: ApiMock):
-    api.me = json_error(401)
-    open_app(page, frontend_server)
-
-    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
-    expect(page.locator("#user-menu")).to_be_hidden()
-
-
-def test_user_menu_click_opens_dropdown(page: Page, frontend_server: str, api: ApiMock):
-    open_app(page, frontend_server)
-    expect(page.locator("#user-dropdown")).to_be_hidden()
-    expect(page.locator("#user-menu-btn")).to_have_attribute("aria-expanded", "false")
-
-    page.click("#user-menu-btn")
-
-    expect(page.locator("#user-dropdown")).to_be_visible()
-    expect(page.locator("#user-menu-btn")).to_have_attribute("aria-expanded", "true")
-    expect(page.locator("#user-dropdown-email")).to_have_text("tester@example.com")
-    expect(page.locator("#logout-link")).to_have_text("Logout")
-    expect(page.locator("#logout-link")).to_have_attribute("href", "/auth/logout")
-
-
-def test_user_menu_second_click_closes_dropdown(
-    page: Page, frontend_server: str, api: ApiMock
-):
-    open_app(page, frontend_server)
-
-    page.click("#user-menu-btn")
-    expect(page.locator("#user-dropdown")).to_be_visible()
-
-    page.click("#user-menu-btn")
-
-    expect(page.locator("#user-dropdown")).to_be_hidden()
-    expect(page.locator("#user-menu-btn")).to_have_attribute("aria-expanded", "false")
-
-
-def test_user_menu_closes_on_outside_click(
-    page: Page, frontend_server: str, api: ApiMock
-):
-    open_app(page, frontend_server)
-
-    page.click("#user-menu-btn")
-    expect(page.locator("#user-dropdown")).to_be_visible()
-
-    page.click("h1")
-
-    expect(page.locator("#user-dropdown")).to_be_hidden()
-    expect(page.locator("#user-menu-btn")).to_have_attribute("aria-expanded", "false")
-
-
-def test_user_menu_closes_on_escape_and_restores_focus(
-    page: Page, frontend_server: str, api: ApiMock
-):
-    open_app(page, frontend_server)
-
-    page.click("#user-menu-btn")
-    expect(page.locator("#user-dropdown")).to_be_visible()
-
-    page.keyboard.press("Escape")
-
-    expect(page.locator("#user-dropdown")).to_be_hidden()
-    expect(page.locator("#user-menu-btn")).to_be_focused()
-
-
-def test_arrow_down_opens_menu_and_focuses_logout(
-    page: Page, frontend_server: str, api: ApiMock
-):
-    open_app(page, frontend_server)
-    expect(page.locator("#user-menu")).to_be_visible()
-
-    page.focus("#user-menu-btn")
-    page.keyboard.press("ArrowDown")
-
-    expect(page.locator("#user-dropdown")).to_be_visible()
-    expect(page.locator("#logout-link")).to_be_focused()
-
-
-def test_logout_link_navigates_to_auth_logout(
-    page: Page, frontend_server: str, api: ApiMock
-):
-    # frontend_server is a bare static server with no /auth/logout route, so
-    # stub it here rather than in ApiMock (which only handles /api/*).
-    page.route(
-        "**/auth/logout",
-        lambda route: route.fulfill(
-            status=200, content_type="text/html", body="<p>logged out</p>"
-        ),
-    )
-
-    open_app(page, frontend_server)
-    page.click("#user-menu-btn")
-    page.click("#logout-link")
-
-    expect(page.locator("p")).to_have_text("logged out")
-    assert page.url.endswith("/auth/logout")
-
-
-# --- phrase / loadRandomPhrase + renderPhrase ----------------------------
 
 
 def test_renders_random_phrase(page: Page, frontend_server: str, api: ApiMock):
@@ -238,7 +130,7 @@ def test_category_labels_are_prettified_but_values_stay_slugs(
 def test_saved_preferences_are_restored_on_load(
     page: Page, frontend_server: str, api: ApiMock
 ):
-    api.preferences = {"difficulty": "easy", "category": "food"}
+    seed_preferences(page, json.dumps({"difficulty": "easy", "category": "food"}))
 
     open_app(page, frontend_server)
 
@@ -261,11 +153,7 @@ def test_selecting_a_filter_persists_it(page: Page, frontend_server: str, api: A
     page.select_option("#difficulty-select", "hard")
     page.select_option("#category-select", "greetings")
 
-    saved = api.requests_to("/api/me/preferences")
-    puts = [r for r in saved if r.method == "PUT"]
-    assert len(puts) == 2
-    assert json.loads(puts[0].post_data) == {"difficulty": "hard", "category": None}
-    assert json.loads(puts[1].post_data) == {
+    assert json.loads(stored_preferences(page)) == {
         "difficulty": "hard",
         "category": "greetings",
     }
@@ -275,7 +163,9 @@ def test_saved_category_no_longer_offered_is_ignored(
     page: Page, frontend_server: str, api: ApiMock
 ):
     """A category can disappear from the phrase table; don't select nothing."""
-    api.preferences = {"difficulty": None, "category": "retired-category"}
+    seed_preferences(
+        page, json.dumps({"difficulty": None, "category": "retired-category"})
+    )
 
     open_app(page, frontend_server)
 
@@ -284,15 +174,27 @@ def test_saved_category_no_longer_offered_is_ignored(
     assert "category=" not in api.requests_to("/api/phrases/random")[0].url
 
 
-def test_unreadable_preferences_fall_back_to_no_filters(
+def test_corrupt_stored_preferences_fall_back_to_no_filters(
     page: Page, frontend_server: str, api: ApiMock
 ):
-    api.preferences = json_error(500)
+    """The failure mode the try/catch around JSON.parse exists for."""
+    seed_preferences(page, "{not json")
+
+    open_app(page, frontend_server)
+
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    expect(page.locator("#difficulty-select")).to_have_value("")
+    expect(page.locator("#category-select")).to_have_value("")
+
+
+def test_unreadable_categories_fall_back_to_no_filters(
+    page: Page, frontend_server: str, api: ApiMock
+):
     api.categories = json_error(500)
 
     open_app(page, frontend_server)
 
-    # A failed preference load must not stop the app from loading a phrase.
+    # A failed category load must not stop the app from loading a phrase.
     expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
     expect(page.locator("#difficulty-select")).to_have_value("")
     expect(page.locator("#category-select")).to_have_value("")

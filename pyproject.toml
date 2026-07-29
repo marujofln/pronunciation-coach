@@ -1,16 +1,14 @@
 [project]
 name = "pronunciation-coach"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local web app for practicing English pronunciation with Whisper-based phoneme scoring"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.5",
-    "authlib>=1.7.2",
     "fastapi[standard]>=0.140.13",
     "faster-whisper>=1.2.1",
     "g2p-en>=2.1.0",
-    "itsdangerous>=2.2.0",
     "nltk<3.9",
     "psycopg[binary]>=3.3.4",
     "sqlmodel>=0.0.39",

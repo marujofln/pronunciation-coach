@@ -55,20 +55,3 @@ class StatsRead(BaseModel):
     total_attempts: int
     average_score: float | None
     per_phrase: list[PhraseStats]
-
-
-class UserRead(BaseModel):
-    id: int
-    email: str | None
-
-
-class PreferencesRead(BaseModel):
-    difficulty: Difficulty | None
-    category: str | None
-
-
-class PreferencesUpdate(BaseModel):
-    """A full replacement: an omitted field is stored as "Any", not left alone."""
-
-    difficulty: Difficulty | None = None
-    category: str | None = None

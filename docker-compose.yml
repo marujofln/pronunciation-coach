@@ -1,11 +1,7 @@
 # Shared by the app and the migration runner: both need the same database, and
 # Alembic's env.py imports app/config.py (the one place that knows how to build
-# the URL), so it inherits app/config.py's required-no-default auth vars too.
+# the URL), so it needs the same connection vars the app does.
 x-app-env: &app-env
-  SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?session secret required}
-  AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER:?authentik issuer url required}
-  AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:?authentik client id required}
-  AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:?authentik client secret required}
   POSTGRES_HOST: pronunciation-coach-db
   POSTGRES_PORT: "5432"
   POSTGRES_DB: ${POSTGRES_DB:-pronunciation_coach}
@@ -42,9 +38,6 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  # --- This app's own Postgres. Deliberately separate from authentik-db:
-  # sharing one server would tie this app's data lifecycle to Authentik's, so
-  # wiping Authentik to redo its bootstrap would take practice history with it.
   pronunciation-coach-db:
     image: docker.io/library/postgres:16-alpine
     restart: unless-stopped
@@ -58,9 +51,9 @@ services:
     volumes:
       - pronunciation-coach-db-data:/var/lib/postgresql/data
     healthcheck:
-      # Tighter interval than authentik-db's: `up` blocks on this healthcheck
-      # twice over (migrate, then the app), so 30s would add most of a minute
-      # to every cold start.
+      # A tight interval on purpose: `up` blocks on this healthcheck twice over
+      # (migrate, then the app), so a slow one adds most of a minute to every
+      # cold start.
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
@@ -82,62 +75,5 @@ services:
     # service — and `upgrade head` is a no-op once the schema is at head.
     restart: "no"
 
-  # --- Authentik: the OIDC identity provider this app authenticates against.
-  # See README.md "Authentication setup" for the bootstrap sequence.
-  authentik-db:
-    image: docker.io/library/postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${AUTHENTIK_PG_DB:-authentik}
-      POSTGRES_USER: ${AUTHENTIK_PG_USER:-authentik}
-      POSTGRES_PASSWORD: ${AUTHENTIK_PG_PASSWORD:?authentik db password required}
-    volumes:
-      - authentik-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  authentik-server:
-    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.6}
-    command: server
-    restart: unless-stopped
-    depends_on:
-      authentik-db:
-        condition: service_healthy
-    environment:
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?authentik secret key required}
-      AUTHENTIK_POSTGRESQL__HOST: authentik-db
-      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_PG_DB:-authentik}
-      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_PG_USER:-authentik}
-      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASSWORD}
-    ports:
-      - "${AUTHENTIK_HTTP_PORT:-9000}:9000"
-      - "${AUTHENTIK_HTTPS_PORT:-9443}:9443"
-    volumes:
-      - authentik-media:/data
-    shm_size: 512mb
-
-  authentik-worker:
-    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.6}
-    command: worker
-    restart: unless-stopped
-    depends_on:
-      authentik-db:
-        condition: service_healthy
-    environment:
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?authentik secret key required}
-      AUTHENTIK_POSTGRESQL__HOST: authentik-db
-      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_PG_DB:-authentik}
-      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_PG_USER:-authentik}
-      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASSWORD}
-    volumes:
-      - authentik-media:/data
-    shm_size: 512mb
-
 volumes:
   pronunciation-coach-db-data:
-  authentik-db-data:
-  authentik-media:
