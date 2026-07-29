@@ -41,8 +41,11 @@ body {
 }
 
 header {
+  position: relative;
   text-align: center;
-  padding: 2rem 1rem 1rem;
+  /* Symmetric side padding so the h1 stays centred while the absolutely
+     positioned user menu has room at the right edge on narrow screens. */
+  padding: 2rem 3.5rem 1rem;
 }
 
 header h1 {
@@ -55,14 +58,103 @@ header h1 {
   color: var(--muted);
 }
 
-.auth-status {
-  margin: 0.5rem 0 0;
-  font-size: 0.85rem;
+.user-menu {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  /* header is text-align: center; the popups read as normal left-aligned text. */
+  text-align: left;
+}
+
+.user-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-bg);
   color: var(--muted);
 }
 
-.auth-status a {
+.user-icon:hover,
+.user-icon:focus-visible,
+.user-icon[aria-expanded="true"] {
   color: var(--accent);
+  border-color: var(--accent);
+}
+
+.user-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.user-tooltip {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  white-space: nowrap;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--muted);
+  font-size: 0.8rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-in;
+}
+
+.user-menu:hover .user-tooltip,
+.user-icon:focus-visible ~ .user-tooltip {
+  opacity: 1;
+}
+
+/* The dropdown already names the user; don't stack a tooltip on top of it. */
+.user-icon[aria-expanded="true"] ~ .user-tooltip {
+  opacity: 0;
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  min-width: 12rem;
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
+}
+
+.user-dropdown-email {
+  margin: 0;
+  padding: 0.3rem 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.user-dropdown-item {
+  display: block;
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.user-dropdown-item:hover,
+.user-dropdown-item:focus-visible {
+  background: var(--bg);
 }
 
 main {

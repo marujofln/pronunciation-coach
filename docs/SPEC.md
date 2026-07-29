@@ -16,7 +16,7 @@ A local, single-user web app for practicing English pronunciation: pick a phrase
 - Backend is FastAPI, following the `fastapi` skill's conventions (Annotated dependencies, no Ellipsis defaults, no RootModel, return-type-driven serialization, router-level prefix/tags, SQLModel, uv for dependency management).
 - User authentication: authenticate users against an external authentication server (OAuth2/OIDC) — preferably open-source, easy to integrate with this FastAPI + plain-JS stack, and free of charge. Supersedes the original v0.0.1 "no auth, single local user" scope (see Authentication checklist below).
 - Persist each authenticated user's choices (e.g. their difficulty/category filter selection) in the database, tied to their account, so preferences carry over between visits.
-- User menu in the frontend: a user icon in the top-right corner of the logged-in screen; hovering it shows the logged-in user; clicking it opens a menu with a "Logout" option that ends the session. Supersedes the current inline "Logged in as X · Logout" header text (see User menu checklist below).
+- User menu in the frontend: a user icon in the top-right corner of the logged-in screen; hovering it shows the logged-in user; clicking it opens a menu with a "Logout" option that ends the session. Superseded the original inline "Logged in as X · Logout" header text (see User menu checklist below).
 - A "speak" button lets the user listen to the correct pronunciation of the target phrase (reference audio, not their own recording).
 - Hover-to-listen: hovering over a word for N seconds plays that word's correct pronunciation on its own.
 - Runs on CPU only (no GPU dependency).
@@ -104,21 +104,21 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 
 - [x] Evaluate open-source, free, easy-to-integrate OAuth2/OIDC auth servers and pick one — chose **Authentik** over Keycloak (see Decisions above: ~250–350MB RAM vs. Keycloak's 400MB–2GB+, no Redis dependency since the 2025.10 release).
 - [x] Integrate the OIDC/OAuth2 login flow into the FastAPI backend — `app/auth.py` (Authlib OAuth client, `get_current_user`/`require_web_session` dependencies, `User` model with `Attempt.user_id` FK) and `app/routers/auth.py` (`/auth/login`, `/auth/callback`, `/auth/logout`, `/api/me`); `/api/phrases/*` and `/api/attempts/*` require a session (401 JSON without one), the static frontend redirects to login instead, and attempt history/stats are scoped per-user.
-- [x] Add a login/logout flow to the plain-JS frontend — header shows "Logged in as X · Logout" via a new `/api/me` call in `app.js`.
+- [x] Add a login/logout flow to the plain-JS frontend — `app.js` calls `/api/me` on load and renders the top-right user menu (hover for identity, click for Logout; see the User menu checklist below).
 - [x] Automated test coverage — `app/tests/test_auth.py` (401 without a session, `/api/me` identity, per-user history/stats scoping isolation), `conftest.py` injects a fake authenticated user via `app.dependency_overrides` so `pytest` needs no real Authentik instance.
 - [x] Update `README.md` / `CLAUDE.md` (this pass)
 - [ ] **Stand up Authentik and complete manual verification** — requires a human + real browser, not done in this pass: bring up `authentik-db`/`authentik-server`/`authentik-worker` via `docker compose up -d`, complete the `akadmin` bootstrap at `/if/flow/initial-setup/`, create the OIDC Provider + Application to get real `AUTHENTIK_CLIENT_ID`/`AUTHENTIK_CLIENT_SECRET`/`AUTHENTIK_ISSUER` values, confirm the `/etc/hosts` `authentik-server` workaround actually resolves the dual-audience issuer problem for this Authentik version, and click through the full login → session → logout flow. Also delete the old `data/pronunciation_coach.db` first — it pre-dates the `user`/`attempt.user_id` columns and there's no migration tooling yet (see Database/Alembic below).
 
 
 
-### User menu (frontend, not started, depends on Authentication)
+### User menu (frontend)
 
-- [ ] Replace the current inline "Logged in as X · Logout" header text in `frontend/index.html` / `app.js` with a user icon anchored to the top-right of the logged-in screen
-- [ ] On hover, show the logged-in user (email/name from the existing `/api/me` call) — a `title` tooltip or a small custom tooltip
-- [ ] On click, toggle a dropdown menu containing a "Logout" option that navigates to `/auth/logout`
-- [ ] Close the menu on outside click, on `Escape`, and on selecting an item; keep it keyboard-reachable (focusable trigger, `aria-expanded`, arrow/`Escape` handling)
-- [ ] Style in `style.css` to match the existing look; no new dependencies (vanilla JS, see the Frontend decision above)
-- [ ] Update the `loadCurrentUser` tests in `app/tests/test_frontend.py` — they assert on the current inline "Logged in as X · Logout" markup and will fail once it's replaced; add coverage for the new open/close, outside-click, and `Escape` behaviour while there
+- [x] Replace the inline "Logged in as X · Logout" header text in `frontend/index.html` / `app.js` with a user icon anchored to the top-right of the logged-in screen — inline SVG glyph in a round `#user-menu-btn`, absolutely positioned inside a now-`position: relative` `<header>`; `header`'s side padding went to a symmetric `3.5rem` so the centred `h1` never collides with it on narrow screens
+- [x] On hover, show the logged-in user (email, falling back to `user #<id>`, from the existing `/api/me` call) — a custom `#user-tooltip` span revealed via CSS `opacity` on `.user-menu:hover` / `.user-icon:focus-visible`, chosen over a native `title` so it's assertable in a browser test and styleable with the existing custom properties
+- [x] On click, toggle a dropdown menu containing a "Logout" option that navigates to `/auth/logout` — a real `<a href>`, so signing out stays plain navigation with no JS involved. The dropdown repeats the user label above the Logout item, since touch users can't reach the hover tooltip
+- [x] Close the menu on outside click, on `Escape`, and on selecting an item; keep it keyboard-reachable — `openUserMenu`/`closeUserMenu`/`toggleUserMenu` keep `aria-expanded` in sync with `hidden`, `Escape` restores focus to the trigger, `ArrowDown` opens and focuses Logout. The button's own click handler calls `stopPropagation()`, otherwise the document-level outside-click listener sees the same click and closes what was just opened
+- [x] Style in `style.css` to match the existing look; no new dependencies (vanilla JS, see the Frontend decision above) — all colors come from the existing `:root` custom properties, so dark mode needed no extra rules
+- [x] Update the `loadCurrentUser` tests in `app/tests/test_frontend.py` — the three header tests were rewritten against the new markup and six more added (open, close-on-second-click, outside click, `Escape` + focus restore, `ArrowDown`, and Logout navigation). The logout test registers its own `page.route("**/auth/logout", …)`, since `ApiMock` only intercepts `/api/*` and the static test server has no such route. Suite now 55 tests (32 of them `frontend`-marked)
 
 ### User preferences (not started, depends on Authentication)
 
@@ -155,7 +155,6 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 
 - [ ] Manual real-microphone pronunciation test in a browser (see Testing & verification above) — the one requirement that still needs a human to confirm.
 - [ ] Stand up Authentik and complete manual login/logout verification in a browser (see Authentication checklist above) — code is implemented and tested, but needs a human to bootstrap the real auth server and click through the flow.
-- [ ] User menu with a top-right user icon, hover-to-show logged-in user, and click-to-logout (see User menu checklist above) — not yet started.
 - [ ] Persist user choices in the database (see User preferences checklist above) — not yet started, depends on authentication being in place first.
 - [ ] Speak button + hover-to-listen TTS (see Audio playback / TTS checklist above) — not yet started.
 - [ ] Migrate from SQLite to PostgreSQL with Alembic-managed schema (see Database checklist above) — not yet started.

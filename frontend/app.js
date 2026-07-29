@@ -22,7 +22,12 @@ const els = {
   transcriptText: document.getElementById("transcript-text"),
   statsSummary: document.getElementById("stats-summary"),
   historyList: document.getElementById("history-list"),
-  authStatus: document.getElementById("auth-status"),
+  userMenu: document.getElementById("user-menu"),
+  userMenuBtn: document.getElementById("user-menu-btn"),
+  userTooltip: document.getElementById("user-tooltip"),
+  userDropdown: document.getElementById("user-dropdown"),
+  userDropdownEmail: document.getElementById("user-dropdown-email"),
+  logoutLink: document.getElementById("logout-link"),
 };
 
 function setStatus(message) {
@@ -35,14 +40,29 @@ async function loadCurrentUser() {
     if (!res.ok) return;
     const me = await res.json();
     const label = me.email || `user #${me.id}`;
-    els.authStatus.textContent = "";
-    els.authStatus.appendChild(document.createTextNode(`Logged in as ${label} · `));
-    const logoutLink = document.createElement("a");
-    logoutLink.href = "/auth/logout";
-    logoutLink.textContent = "Logout";
-    els.authStatus.appendChild(logoutLink);
+    els.userTooltip.textContent = label;
+    els.userDropdownEmail.textContent = label;
+    els.userMenu.hidden = false;
   } catch {
-    // non-fatal — leave the header blank
+    // non-fatal — leave the user menu hidden
+  }
+}
+
+function openUserMenu() {
+  els.userDropdown.hidden = false;
+  els.userMenuBtn.setAttribute("aria-expanded", "true");
+}
+
+function closeUserMenu() {
+  els.userDropdown.hidden = true;
+  els.userMenuBtn.setAttribute("aria-expanded", "false");
+}
+
+function toggleUserMenu() {
+  if (els.userDropdown.hidden) {
+    openUserMenu();
+  } else {
+    closeUserMenu();
   }
 }
 
@@ -226,6 +246,32 @@ els.newPhraseBtn.addEventListener("click", loadRandomPhrase);
 els.difficultySelect.addEventListener("change", loadRandomPhrase);
 els.recordBtn.addEventListener("click", toggleRecording);
 els.submitBtn.addEventListener("click", submitAttempt);
+
+els.userMenuBtn.addEventListener("click", (e) => {
+  // Without this the document listener below sees the same click and
+  // immediately closes what we just opened.
+  e.stopPropagation();
+  toggleUserMenu();
+});
+
+els.userMenuBtn.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    openUserMenu();
+    els.logoutLink.focus();
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!els.userMenu.contains(e.target)) closeUserMenu();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !els.userDropdown.hidden) {
+    closeUserMenu();
+    els.userMenuBtn.focus();
+  }
+});
 
 loadCurrentUser();
 loadRandomPhrase();

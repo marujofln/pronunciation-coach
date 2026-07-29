@@ -41,33 +41,129 @@ def record_clip(page: Page) -> None:
     expect(page.locator("#submit-btn")).to_be_enabled()
 
 
-# --- header / loadCurrentUser --------------------------------------------
+# --- user menu / loadCurrentUser -----------------------------------------
 
 
-def test_header_shows_logged_in_user(page: Page, frontend_server: str, api: ApiMock):
+def test_user_menu_shows_logged_in_user_on_hover(
+    page: Page, frontend_server: str, api: ApiMock
+):
     open_app(page, frontend_server)
+    expect(page.locator("#user-menu")).to_be_visible()
 
-    expect(page.locator("#auth-status")).to_contain_text(
-        "Logged in as tester@example.com"
-    )
-    expect(page.locator('#auth-status a[href="/auth/logout"]')).to_have_text("Logout")
+    # The tooltip is always in the DOM; hovering is what makes it opaque.
+    page.hover("#user-menu-btn")
+
+    tooltip = page.locator("#user-tooltip")
+    expect(tooltip).to_have_text("tester@example.com")
+    expect(tooltip).to_have_css("opacity", "1")
 
 
-def test_header_falls_back_to_user_id(page: Page, frontend_server: str, api: ApiMock):
+def test_user_menu_falls_back_to_user_id(
+    page: Page, frontend_server: str, api: ApiMock
+):
     api.me = {"id": 42, "email": None}
     open_app(page, frontend_server)
 
-    expect(page.locator("#auth-status")).to_contain_text("Logged in as user #42")
+    expect(page.locator("#user-tooltip")).to_have_text("user #42")
+    page.click("#user-menu-btn")
+    expect(page.locator("#user-dropdown-email")).to_have_text("user #42")
 
 
-def test_header_stays_blank_when_me_fails(
-    page: Page, frontend_server: str, api: ApiMock
-):
+def test_user_menu_hidden_when_me_fails(page: Page, frontend_server: str, api: ApiMock):
     api.me = json_error(401)
     open_app(page, frontend_server)
 
     expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
-    expect(page.locator("#auth-status")).to_be_empty()
+    expect(page.locator("#user-menu")).to_be_hidden()
+
+
+def test_user_menu_click_opens_dropdown(page: Page, frontend_server: str, api: ApiMock):
+    open_app(page, frontend_server)
+    expect(page.locator("#user-dropdown")).to_be_hidden()
+    expect(page.locator("#user-menu-btn")).to_have_attribute("aria-expanded", "false")
+
+    page.click("#user-menu-btn")
+
+    expect(page.locator("#user-dropdown")).to_be_visible()
+    expect(page.locator("#user-menu-btn")).to_have_attribute("aria-expanded", "true")
+    expect(page.locator("#user-dropdown-email")).to_have_text("tester@example.com")
+    expect(page.locator("#logout-link")).to_have_text("Logout")
+    expect(page.locator("#logout-link")).to_have_attribute("href", "/auth/logout")
+
+
+def test_user_menu_second_click_closes_dropdown(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    open_app(page, frontend_server)
+
+    page.click("#user-menu-btn")
+    expect(page.locator("#user-dropdown")).to_be_visible()
+
+    page.click("#user-menu-btn")
+
+    expect(page.locator("#user-dropdown")).to_be_hidden()
+    expect(page.locator("#user-menu-btn")).to_have_attribute("aria-expanded", "false")
+
+
+def test_user_menu_closes_on_outside_click(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    open_app(page, frontend_server)
+
+    page.click("#user-menu-btn")
+    expect(page.locator("#user-dropdown")).to_be_visible()
+
+    page.click("h1")
+
+    expect(page.locator("#user-dropdown")).to_be_hidden()
+    expect(page.locator("#user-menu-btn")).to_have_attribute("aria-expanded", "false")
+
+
+def test_user_menu_closes_on_escape_and_restores_focus(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    open_app(page, frontend_server)
+
+    page.click("#user-menu-btn")
+    expect(page.locator("#user-dropdown")).to_be_visible()
+
+    page.keyboard.press("Escape")
+
+    expect(page.locator("#user-dropdown")).to_be_hidden()
+    expect(page.locator("#user-menu-btn")).to_be_focused()
+
+
+def test_arrow_down_opens_menu_and_focuses_logout(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    open_app(page, frontend_server)
+    expect(page.locator("#user-menu")).to_be_visible()
+
+    page.focus("#user-menu-btn")
+    page.keyboard.press("ArrowDown")
+
+    expect(page.locator("#user-dropdown")).to_be_visible()
+    expect(page.locator("#logout-link")).to_be_focused()
+
+
+def test_logout_link_navigates_to_auth_logout(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    # frontend_server is a bare static server with no /auth/logout route, so
+    # stub it here rather than in ApiMock (which only handles /api/*).
+    page.route(
+        "**/auth/logout",
+        lambda route: route.fulfill(
+            status=200, content_type="text/html", body="<p>logged out</p>"
+        ),
+    )
+
+    open_app(page, frontend_server)
+    page.click("#user-menu-btn")
+    page.click("#logout-link")
+
+    expect(page.locator("p")).to_have_text("logged out")
+    assert page.url.endswith("/auth/logout")
 
 
 # --- phrase / loadRandomPhrase + renderPhrase ----------------------------
