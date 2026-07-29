@@ -9,7 +9,7 @@ A local web app for practicing English pronunciation. Pick a phrase, record your
   - *professional registers* — information-technology, medical, legal, finance, business, education, science, engineering, customer-service, job-interview, public-speaking
   - *phonetics drills* — minimal-pairs (ship/sheep, think/sink), numbers-and-dates (thirteen/thirty), idioms
 - **Speech-to-text** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, CPU, int8) transcribes your recording locally, no cloud API calls.
-- **Phoneme-level scoring** — both the target phrase and your transcript are converted to ARPAbet phonemes ([g2p_en](https://github.com/Kyubyong/g2p_en)) and compared with phoneme edit-distance, so the score reflects actual pronunciation accuracy rather than just "did Whisper understand the words." Per-word feedback shows expected vs. heard phonemes.
+- **Phoneme-level scoring** — both the target phrase and your transcript are converted to ARPAbet phonemes ([g2p_en](https://github.com/Kyubyong/g2p)) and compared with phoneme edit-distance, so the score reflects actual pronunciation accuracy rather than just "did Whisper understand the words." Per-word feedback shows expected vs. heard phonemes.
 - **Attempt history** — every recording, transcript, and score is saved to PostgreSQL per account, with a running average and per-phrase stats. Schema changes ship as [Alembic](https://alembic.sqlalchemy.org/) migrations.
 - **Saved preferences** — your difficulty and category filter selection is stored against your account and restored on your next visit, so you don't re-pick it every time.
 - **Authentication** — the whole app sits behind [Authentik](https://goauthentik.io/) (open-source OIDC), so history/stats are scoped to your own account.
@@ -41,7 +41,7 @@ docker compose up -d
 
 The database lives in a named Docker volume (`pronunciation-coach-db-data`), not in `data/` — so unlike the old SQLite file, **`docker compose down -v` destroys your practice history**. Plain `docker compose down` does not.
 
-Open http://localhost:8000, allow microphone access, and start recording.
+Open <http://localhost:8000>, allow microphone access, and start recording.
 
 On first run, the app downloads the Whisper model (~150MB) and nltk's `cmudict`/POS-tagger data into `data/` (bind-mounted from the host) — this needs internet access once, after which everything runs offline, even across container rebuilds.
 
@@ -125,7 +125,7 @@ That's it — visiting `http://localhost:8000` redirects straight into a working
 All configuration is via environment variables (see `app/config.py`), settable either natively or in `docker-compose.yml`:
 
 | Variable | Default | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `WHISPER_MODEL_SIZE` | `small.en` | faster-whisper model size (e.g. `base.en`, `medium.en`) |
 | `WHISPER_COMPUTE_TYPE` | `int8` | CTranslate2 compute type |
 | `PRONUNCIATION_COACH_DATA_DIR` | `./data` | Root directory for saved recordings and the model/nltk caches (not the database — that's Postgres) |
@@ -165,7 +165,7 @@ See `CLAUDE.md` for architecture notes.
 
 ## Project layout
 
-```
+```text
 app/
 ├── main.py         # FastAPI app, startup lifespan, router/frontend wiring
 ├── __init__.py      # SQLModel constraint naming convention (must load before models)
