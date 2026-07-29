@@ -10,7 +10,7 @@ A local, single-user web app for practicing English pronunciation: pick a phrase
 
 - Record phrase audio in the browser (`MediaRecorder`) and transcribe it locally with an open Whisper model — no cloud API calls.
 - Score pronunciation at the **phoneme level**, not just word-level transcription match: convert both the target phrase and the transcript to phonemes and compare, so mispronunciations Whisper's language model might "autocorrect" past still get caught. Return per-word feedback (correct / mispronounced / missing / extra) with expected vs. heard phonemes.
-- Practice phrases come from a seeded database, filterable/selectable by difficulty and category.
+- Practice phrases come from a seeded database, filterable/selectable by difficulty and category. The category set spans everyday conversation, professional/domain registers (medical, legal, information technology, …), and phonetics-targeted drill sets; slugs are lowercase and hyphenated, since the frontend renders them verbatim as the select's option labels.
 - Every attempt (transcript, score, per-word feedback) is persisted, with history and basic stats (average score, per-phrase averages) viewable.
 - Frontend is plain HTML/CSS/JS with no build step, served directly by the backend.
 - Backend is FastAPI, following the `fastapi` skill's conventions (Annotated dependencies, no Ellipsis defaults, no RootModel, return-type-driven serialization, router-level prefix/tags, SQLModel, uv for dependency management).
@@ -45,6 +45,20 @@ For the speak button and hover-to-listen, use the browser's built-in `SpeechSynt
 Moving off SQLite is driven by the app now being multi-user (auth + per-user attempts/preferences): SQLite's single-writer model is a worse fit than Postgres for concurrent authenticated users, and Postgres pairs naturally with running the auth server (Authentik/Keycloak, see Authentication above) as another `docker-compose.yml` service that itself typically wants Postgres. Run Postgres as a `db` service in `docker-compose.yml` (named volume for data, not a bind mount, since Postgres manages its own on-disk format), and switch `app/db.py`'s `create_engine` call from the `sqlite:///` URL to a `postgresql+psycopg://` URL built from env vars (host/port/db/user/password), following `app/config.py`'s existing pattern of computing config at import time from the environment. `psycopg[binary]` is the driver (actively maintained `psycopg3`, prebuilt wheels, no separate libpq install needed in the container).
 
 Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-only, fine for a throwaway SQLite file) to explicit Alembic migrations, since Postgres is now a persistent shared service that other services (the auth server) and future deployments depend on — ad hoc `create_all()` can't express column drops/renames or data backfills, which real schema evolution eventually needs. `alembic init` generates `app/alembic/`; `env.py` imports `SQLModel.metadata` (all models must already be imported so their tables are registered) as the autogenerate target and reads the DB URL from `app/config.py` rather than duplicating it in `alembic.ini`. Migrations run explicitly (`uv run alembic upgrade head`), not automatically from app startup, so a bad migration doesn't take the app down on boot — run it as a one-off step in local dev and as an explicit step (or init container) in Docker before the app service starts.
+
+### Practice phrase categories: professional registers + phonetics drills
+
+The seeded categories started out as everyday-conversation topics only — `greetings`, `food`, `travel`, `business`, `small-talk`, `tongue-twisters`, `weather`, `technology`. That under-serves the app's actual user: a working non-native speaker whose hardest pronunciation problems are in the vocabulary of their *job*, not at the coffee shop. Latinate legal terms, Greek-rooted clinical vocabulary, and IT jargon with unstable stress (`ˈdeploy` vs. `deˈployment`) are exactly the words people mispronounce in the meetings that matter, and none of them were reachable. So the taxonomy grows along two axes: **professional/domain registers**, and **phonetics-targeted drill sets** that exercise the scorer itself rather than a topic.
+
+`minimal-pairs` is the most valuable of the drill sets and is worth calling out: `ship`/`sheep`, `think`/`sink`, `rice`/`lice` are precisely the contrasts a transcription-only comparison would miss, because Whisper's language model happily "autocorrects" the wrong one into the contextually plausible one. Scoring at the phoneme level is what this app has that a dictation app doesn't, and a category built out of minimal pairs is the direct exercise of it.
+
+**Terminology — `legal`, not `justice`.** The lawyers' professional domain and register is *legal* in English ("legal English", "legal counsel", "legal department", "legal advice"). *Justice* names the abstract ideal or the institution (the court system, a Supreme Court Justice), not the field of practice — a category called `justice` would read as a civics topic rather than a vocabulary set for practising lawyers. Hence the slug `legal`.
+
+**Naming convention**: lowercase, hyphenated, no spaces. This isn't cosmetic — `loadCategories()` in `frontend/app.js` uses the API string as both `option.value` and `option.textContent`, so the slug *is* the visible label until a prettifier is added (see the checklist below).
+
+**Full set (20 categories).** Everyday conversation: `greetings`, `small-talk`, `food`, `travel`, `weather`, `tongue-twisters`. Professional/domain registers: `information-technology`, `medical`, `legal`, `finance`, `business`, `education`, `science`, `engineering`, `customer-service`, `job-interview`, `public-speaking`. Phonetics drills: `minimal-pairs`, `numbers-and-dates`, `idioms`.
+
+**`technology` → `information-technology`**: a rename, not an addition. The seven existing `technology` phrases (wifi passwords, software updates) are already IT-flavoured, and shipping both slugs would put two near-identical options next to each other in the dropdown with no principled way for a user to guess which holds what. The scope broadens with the rename, from consumer gadgets to the workplace IT register. One wrinkle: an existing `UserPreference` row may still store `"technology"`, which then matches no phrase. That degrades safely — `hasOption()` in `frontend/app.js` already ignores a saved category that's no longer offered and falls back to "Any" — but the clean fix is a one-line `UPDATE` carried in the Alembic migration work planned above.
 
 ## Build checklist
 
@@ -131,6 +145,33 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 
 
 
+### Practice phrase categories (not started)
+
+Twelve new categories plus one rename, taking the seeded set from 8 to 20 (see the Decisions entry above for the rationale and the `legal`-vs-`justice` terminology note). Purely a data change — `Phrase.category` is a free-form nullable string with no enum or FK, and `GET /api/phrases/categories` derives the dropdown from whatever is in the table.
+
+- [ ] **Professional / domain registers** — nine new categories in `app/seed_data.py`:
+  - `medical` — symptoms, appointments, prescriptions, diagnoses. Greek/Latin polysyllables, silent letters (`pneumonia`, `psychiatry`), stress that moves under suffixation
+  - `legal` — contracts, liability, testimony, jurisdiction, litigation. Latinate vocabulary and long noun phrases (the lawyers' register; see the terminology note in Decisions)
+  - `finance` — interest rates, invoices, quarterly results, mortgages. Number-heavy phrasing, `-tion`/`-ial` endings
+  - `education` — lectures, assignments, enrolment, grading. Academic register, `-ity`/`-ology` stress patterns
+  - `science` — experiments, hypotheses, measurements, lab procedure. Irregular plurals (`hypothesis`/`hypotheses`), technical stress
+  - `engineering` — specifications, tolerances, maintenance, materials. Compound-noun stress, consonant clusters
+  - `customer-service` — complaints, refunds, apologies, escalation. Polite intonation, modal-heavy sentences
+  - `job-interview` — strengths, experience, availability, salary expectations. Self-presentation register
+  - `public-speaking` — presentations, transitions, summarising, handling Q&A. Sentence-level prosody and pacing
+- [ ] **Phonetics drill sets** — three new categories:
+  - `minimal-pairs` — `ship`/`sheep`, `bat`/`bad`, `think`/`sink`, `rice`/`lice`, `full`/`fool`. The contrasts the phoneme-level scorer exists to catch and that Whisper's LM is likeliest to autocorrect past
+  - `numbers-and-dates` — prices, phone numbers, years, ordinals, times; `thirteen`/`thirty` stress and `-th` endings
+  - `idioms` — fixed expressions where connected speech and rhythm matter more than any individual word
+- [ ] **Rename `technology` → `information-technology`** — retag the 7 existing rows and broaden them from consumer gadgets to the workplace IT register (deployment, latency, repository, authentication). Add a `UserPreference` fix-up (`UPDATE user_preference SET category = 'information-technology' WHERE category = 'technology'`) to the Alembic migration work in the Database section
+- [ ] **Seed ~6 phrases per new category** (2 easy / 2 medium / 2 hard) following the existing `{"text", "difficulty": Difficulty.x, "category"}` dict shape and the `# --- easy/medium/hard ---` banner grouping in `app/seed_data.py` — roughly 72 new phrases, ~124 total. Seeding stays idempotent (keyed on the unique `text` column), so adding entries is safe against an existing DB
+- [ ] **Give every category at least one phrase at each difficulty**, so no filter combination 404s from `/api/phrases/random`. Today's data doesn't hold to this: `greetings` is easy-only, `food` has no hard phrase, and `tongue-twisters` is hard-only, so `hard`+`greetings`, `hard`+`food` and `easy`+`tongue-twisters` all currently return "No phrase matches the given filters". Backfill those three while adding the new categories
+- [ ] **Frontend label prettifying** — `loadCategories()` in `frontend/app.js` currently uses the raw slug as the option label, which reads acceptably for `food` but poorly for `information-technology` and `numbers-and-dates`. Map hyphens to spaces and title-case for `option.textContent` only; `option.value` keeps the raw slug so the API contract, the saved preference values and `hasOption()` are all untouched
+- [ ] **Refresh the stale counts** — "~50 seeded phrases" in the Core app checklist above and in `CLAUDE.md`, plus the explicit category list in `README.md` (which enumerates all 8 current categories by name and goes wrong the moment this lands)
+- [ ] **Test updates** — only two tests touch the real seed data: `app/tests/test_api.py`'s `assert len(phrases) >= 40` (still passes; raise the bound) and `app/tests/test_preferences.py`'s `assert "tongue-twisters" in categories` (unaffected — that category stays). The Playwright `DEFAULT_CATEGORIES` in `app/tests/conftest.py` is mock data and needs no change. Worth adding: a test asserting every seeded category has at least one phrase per difficulty, so the gap above can't silently come back
+
+
+
 ### Audio playback / TTS (not started)
 
 - [ ] Add a "speak" button next to the target phrase that plays it via the Web Speech API (see Decisions above)
@@ -158,5 +199,6 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 - [ ] Manual real-microphone pronunciation test in a browser (see Testing & verification above) — the one requirement that still needs a human to confirm.
 - [ ] Stand up Authentik and complete manual login/logout verification in a browser (see Authentication checklist above) — code is implemented and tested, but needs a human to bootstrap the real auth server and click through the flow.
 - [x] Persist user choices in the database (see User preferences checklist above) — done: `UserPreference` table, `GET`/`PUT /api/me/preferences`, and difficulty + category selects restored on load.
+- [ ] Expand the practice-phrase categories from 8 to 20 — professional registers (medical, legal, information-technology, …) plus phonetics drill sets (see Practice phrase categories checklist above) — not yet started.
 - [ ] Speak button + hover-to-listen TTS (see Audio playback / TTS checklist above) — not yet started.
 - [ ] Migrate from SQLite to PostgreSQL with Alembic-managed schema (see Database checklist above) — not yet started.
