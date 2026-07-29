@@ -4,7 +4,10 @@ A local web app for practicing English pronunciation. Pick a phrase, record your
 
 ## Features
 
-- **Practice phrases** — seeded database of ~50 English phrases across difficulty levels (easy/medium/hard) and categories (greetings, food, travel, business, small-talk, tongue-twisters, weather, technology).
+- **Practice phrases** — seeded database of 133 English phrases across difficulty levels (easy/medium/hard) and 20 categories, every one of them offering all three difficulties:
+  - *everyday conversation* — greetings, small-talk, food, travel, weather, tongue-twisters
+  - *professional registers* — information-technology, medical, legal, finance, business, education, science, engineering, customer-service, job-interview, public-speaking
+  - *phonetics drills* — minimal-pairs (ship/sheep, think/sink), numbers-and-dates (thirteen/thirty), idioms
 - **Speech-to-text** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, CPU, int8) transcribes your recording locally, no cloud API calls.
 - **Phoneme-level scoring** — both the target phrase and your transcript are converted to ARPAbet phonemes ([g2p_en](https://github.com/Kyubyong/g2p_en)) and compared with phoneme edit-distance, so the score reflects actual pronunciation accuracy rather than just "did Whisper understand the words." Per-word feedback shows expected vs. heard phonemes.
 - **Attempt history** — every recording, transcript, and score is saved per account, with a running average and per-phrase stats.

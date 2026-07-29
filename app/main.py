@@ -12,7 +12,7 @@ from app.routers.attempts import router as attempts_router
 from app.routers.auth import router as auth_router
 from app.routers.phrases import router as phrases_router
 from app.routers.preferences import router as preferences_router
-from app.seed_data import seed_phrases
+from app.seed_data import rename_technology_preferences, seed_phrases
 
 
 @asynccontextmanager
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         seed_phrases(session)
+        rename_technology_preferences(session)
 
     app.state.g2p = load_g2p()
     app.state.whisper_model = load_whisper_model()

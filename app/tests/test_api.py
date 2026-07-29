@@ -24,8 +24,33 @@ def test_list_phrases_returns_seeded_phrases(client):
     res = client.get("/api/phrases/")
     assert res.status_code == 200
     phrases = res.json()
-    assert len(phrases) >= 40
+    assert len(phrases) >= 120
     assert {"id", "text", "difficulty", "category", "created_at"} <= phrases[0].keys()
+
+
+def test_every_category_covers_every_difficulty(client):
+    """A category missing a difficulty makes that filter combination 404."""
+    categories = client.get("/api/phrases/categories").json()
+    assert len(categories) >= 20
+
+    empty = [
+        (category, difficulty)
+        for category in categories
+        for difficulty in ("easy", "medium", "hard")
+        if client.get(
+            "/api/phrases/random",
+            params={"category": category, "difficulty": difficulty},
+        ).status_code
+        != 200
+    ]
+    assert empty == []
+
+
+def test_technology_category_was_renamed(client):
+    categories = client.get("/api/phrases/categories").json()
+
+    assert "information-technology" in categories
+    assert "technology" not in categories
 
 
 def test_list_phrases_filters_by_difficulty(client):

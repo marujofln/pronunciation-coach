@@ -73,13 +73,22 @@ async function loadCategories() {
     if (!res.ok) return;
     for (const category of await res.json()) {
       const option = document.createElement("option");
+      // The value stays the raw slug — it's what the API filters on and what
+      // gets stored as a preference; only the label is prettified.
       option.value = category;
-      option.textContent = category;
+      option.textContent = categoryLabel(category);
       els.categorySelect.appendChild(option);
     }
   } catch {
     // non-fatal — the select keeps its "Any" option and filtering still works
   }
+}
+
+// "numbers-and-dates" -> "Numbers and dates". Sentence case rather than title
+// case, which would capitalize the joiners ("Numbers And Dates").
+function categoryLabel(category) {
+  const words = category.replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 async function loadPreferences() {
@@ -147,7 +156,9 @@ async function loadRandomPhrase() {
 function renderPhrase(phrase) {
   els.phraseText.textContent = phrase.text;
   els.phraseDifficulty.textContent = phrase.difficulty;
-  els.phraseCategory.textContent = phrase.category || "";
+  els.phraseCategory.textContent = phrase.category
+    ? categoryLabel(phrase.category)
+    : "";
   els.phraseCategory.hidden = !phrase.category;
   resetRecording();
   els.resultsCard.hidden = true;
