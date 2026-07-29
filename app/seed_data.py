@@ -1,6 +1,6 @@
 from sqlmodel import Session, select
 
-from app.models import Difficulty, Phrase, UserPreference
+from app.models import Difficulty, Phrase
 
 # Grouped by category rather than by difficulty: every category must offer at
 # least one phrase at each difficulty (otherwise that filter combination 404s
@@ -716,22 +716,3 @@ def seed_phrases(session: Session) -> None:
             session.add(row)
 
     session.commit()
-
-
-def rename_technology_preferences(session: Session) -> None:
-    """Carry saved filters across the technology -> information-technology rename.
-
-    Stopgap until Alembic lands (see docs/SPEC.md, Database): a stored preference
-    of "technology" matches no phrase anymore. The frontend degrades safely — it
-    falls back to "Any" — but that silently discards a choice the user did make,
-    for a category that was only renamed. Delete this once the equivalent data
-    migration ships.
-    """
-    stale = session.exec(
-        select(UserPreference).where(UserPreference.category == "technology")
-    ).all()
-    for preference in stale:
-        preference.category = "information-technology"
-        session.add(preference)
-    if stale:
-        session.commit()

@@ -17,6 +17,9 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 COPY README.md ./
+# Alembic's config lives at the repo root, so it isn't picked up by COPY app.
+# (app/alembic/ itself is.)
+COPY alembic.ini ./
 COPY app ./app
 COPY frontend ./frontend
 RUN uv sync --frozen --no-dev

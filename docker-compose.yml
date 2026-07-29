@@ -1,25 +1,86 @@
+# Shared by the app and the migration runner: both need the same database, and
+# Alembic's env.py imports app/config.py (the one place that knows how to build
+# the URL), so it inherits app/config.py's required-no-default auth vars too.
+x-app-env: &app-env
+  SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?session secret required}
+  AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER:?authentik issuer url required}
+  AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:?authentik client id required}
+  AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:?authentik client secret required}
+  POSTGRES_HOST: pronunciation-coach-db
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-pronunciation_coach}
+  POSTGRES_USER: ${POSTGRES_USER:-pronunciation_coach}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?app database password required}
+
 services:
   pronunciation-coach:
     build: .
+    # Same tag on the app and the migration runner, so the image is built once
+    # and the migration is guaranteed to be the exact code the app then runs.
+    image: pronunciation-coach:local
     # Run as the host user so files written into the bind-mounted data/ dir
-    # (recordings, SQLite DB) aren't owned by root. Set HOST_UID/HOST_GID
+    # (recordings, model caches) aren't owned by root. Set HOST_UID/HOST_GID
     # before starting, e.g.: HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     ports:
       - "8000:8000"
     volumes:
-      # Bind-mount the same data/ dir used by native (uv run) development,
-      # so the SQLite DB, saved recordings, and downloaded model/nltk caches
-      # persist across container rebuilds and are shared with local runs.
+      # Bind-mount the same data/ dir used by native (uv run) development, so
+      # saved recordings and the downloaded model/nltk caches persist across
+      # container rebuilds and are shared with local runs. The database is no
+      # longer in here — it's a named volume on pronunciation-coach-db, since
+      # Postgres manages its own on-disk format.
       - ./data:/app/data
     environment:
+      <<: *app-env
       WHISPER_MODEL_SIZE: small.en
       WHISPER_COMPUTE_TYPE: int8
-      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?session secret required}
-      AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER:?authentik issuer url required}
-      AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:?authentik client id required}
-      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:?authentik client secret required}
+    depends_on:
+      pronunciation-coach-db:
+        condition: service_healthy
+      pronunciation-coach-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  # --- This app's own Postgres. Deliberately separate from authentik-db:
+  # sharing one server would tie this app's data lifecycle to Authentik's, so
+  # wiping Authentik to redo its bootstrap would take practice history with it.
+  pronunciation-coach-db:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    # No `user:` override here, unlike the app service. The postgres image runs
+    # initdb as root and drops to its own user; forcing HOST_UID breaks first
+    # boot. The named volume means there's no host-ownership problem to solve.
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pronunciation_coach}
+      POSTGRES_USER: ${POSTGRES_USER:-pronunciation_coach}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?app database password required}
+    volumes:
+      - pronunciation-coach-db-data:/var/lib/postgresql/data
+    healthcheck:
+      # Tighter interval than authentik-db's: `up` blocks on this healthcheck
+      # twice over (migrate, then the app), so 30s would add most of a minute
+      # to every cold start.
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # --- One-shot schema migration, run to completion before the app starts.
+  # Migrations are never applied from the app's own lifespan, so a bad one
+  # fails here instead of crash-looping the app on boot.
+  pronunciation-coach-migrate:
+    build: .
+    image: pronunciation-coach:local
+    command: ["alembic", "upgrade", "head"]
+    environment: *app-env
+    depends_on:
+      pronunciation-coach-db:
+        condition: service_healthy
+    # Quoted: a bare `no` is the YAML boolean false. This is a task, not a
+    # service — and `upgrade head` is a no-op once the schema is at head.
+    restart: "no"
 
   # --- Authentik: the OIDC identity provider this app authenticates against.
   # See README.md "Authentication setup" for the bootstrap sequence.
@@ -77,5 +138,6 @@ services:
     shm_size: 512mb
 
 volumes:
+  pronunciation-coach-db-data:
   authentik-db-data:
   authentik-media:

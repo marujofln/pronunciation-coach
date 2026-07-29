@@ -78,17 +78,15 @@ def test_align_words_equal_length():
     assert pairs == [("a", "a"), ("b", "b"), ("c", "c")]
 
 
-def test_real_g2p_strips_stress_digits(client):
+def test_real_g2p_strips_stress_digits(g2p):
     from app.scoring import word_to_phonemes
 
-    g2p = client.app.state.g2p
     phonemes = word_to_phonemes("hello", g2p)
     assert phonemes == ["HH", "AH", "L", "OW"]
     assert all(not any(ch.isdigit() for ch in p) for p in phonemes)
 
 
-def test_real_g2p_matches_identical_words(client):
-    g2p = client.app.state.g2p
+def test_real_g2p_matches_identical_words(g2p):
     score, feedback = score_attempt("hello there", "hello there", g2p)
     assert score == 100.0
     assert all(f.status == "correct" for f in feedback)

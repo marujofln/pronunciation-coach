@@ -9,7 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
-# App runtime data (SQLite DB, recorded audio, model caches)
+# App runtime data (recorded audio, Whisper/nltk model caches). The database
+# is not here — it's a named Docker volume on the pronunciation-coach-db service.
 data/
 
 # Env files
