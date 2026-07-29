@@ -39,6 +39,15 @@ def list_phrases(
     return [PhraseRead.model_validate(p, from_attributes=True) for p in phrases]
 
 
+@router.get("/categories")
+def list_categories(session: SessionDep) -> list[str]:
+    """The categories actually present in the phrase table, for filter UIs."""
+    categories = session.exec(
+        select(Phrase.category).where(Phrase.category.is_not(None)).distinct()
+    ).all()
+    return sorted(categories)
+
+
 @router.get("/random")
 def get_random_phrase(
     session: SessionDep,

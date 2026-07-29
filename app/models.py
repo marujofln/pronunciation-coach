@@ -30,6 +30,19 @@ class User(SQLModel, table=True):
     attempts: list["Attempt"] = Relationship(back_populates="user")
 
 
+class UserPreference(SQLModel, table=True):
+    """One row per user, holding the filter selection to restore on their next visit.
+
+    Both fields are nullable because "Any" is a real choice, not a missing one.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True, unique=True)
+    difficulty: Difficulty | None = Field(default=None)
+    category: str | None = Field(default=None)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class Attempt(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     phrase_id: int = Field(foreign_key="phrase.id", index=True)

@@ -69,7 +69,7 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 
 - [x] `app/tests/` — unit tests for the scoring algorithm (hand-crafted ARPAbet cases) and `TestClient` smoke tests (phrases, attempts, history, stats) with an isolated data dir and synthetic WAV audio
 - [x] **Frontend test coverage** — `app/tests/test_frontend.py`, 26 headless-Chromium tests via `pytest-playwright` (marker: `frontend`) driving the real shipped `frontend/` files: header/`/api/me` rendering, phrase loading + difficulty filter + failure path, the full record → stop → submit flow, per-word feedback rendering for all four statuses (correct/mispronounced/missing/extra) including phoneme tooltips, history and stats with their empty/error states. Deliberately does **not** start the FastAPI app — a `ThreadingHTTPServer` serves `frontend/` and an `ApiMock` fixture intercepts every `/api/*` call in the browser, so no Whisper/G2p model is ever loaded (~15s vs. ~40s). Chromium runs with `--use-fake-device-for-media-stream`, so the genuine `getUserMedia` + `MediaRecorder` path is exercised rather than stubbed. Server-side frontend wiring (auth gating on `/`, static assets served, `/docs` ungated, plus a contract test asserting every `getElementById` in `app.js` has a matching `id` in `index.html`) lives in `test_auth.py`. One-time setup: `uv run playwright install chromium`.
-- [x] Full pytest suite passing (`uv run pytest`) — 49 tests
+- [x] Full pytest suite passing (`uv run pytest`) — 73 tests
 - [x] Native run verified end-to-end via curl (phrases, random, attempt submission, history, stats)
 - [ ] **Manual verification in a real browser**: grant mic permission, record real speech, confirm transcription and scoring behave sensibly on both correct and mispronounced attempts — not yet confirmed by the user. Automated tests use synthetic non-speech audio (silence/sine tone), which validates the pipeline mechanically but can't validate transcription/scoring accuracy on real speech.
 
@@ -120,12 +120,14 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 - [x] Style in `style.css` to match the existing look; no new dependencies (vanilla JS, see the Frontend decision above) — all colors come from the existing `:root` custom properties, so dark mode needed no extra rules
 - [x] Update the `loadCurrentUser` tests in `app/tests/test_frontend.py` — the three header tests were rewritten against the new markup and six more added (open, close-on-second-click, outside click, `Escape` + focus restore, `ArrowDown`, and Logout navigation). The logout test registers its own `page.route("**/auth/logout", …)`, since `ApiMock` only intercepts `/api/*` and the static test server has no such route. Suite now 55 tests (32 of them `frontend`-marked)
 
-### User preferences (not started, depends on Authentication)
+### User preferences
 
-- [ ] Add a `UserPreference` (or similar) table keyed by authenticated user ID
-- [ ] Persist the user's choice (difficulty/category filter) to the database on selection
-- [ ] Load the user's saved choice as their default when they return, instead of resetting each visit
-- [ ] Expose an endpoint (e.g. `GET`/`PUT /api/me/preferences`) to read and update it
+- [x] Add a `UserPreference` (or similar) table keyed by authenticated user ID — `app/models.py`, one row per user (`user_id` FK is `unique`), nullable `difficulty`/`category` since "Any" is a real choice rather than a missing one, plus `updated_at`
+- [x] Persist the user's choice (difficulty/category filter) to the database on selection — `savePreferences()` fires on every `change` of either select in `frontend/app.js`, alongside the existing refetch
+- [x] Load the user's saved choice as their default when they return, instead of resetting each visit — `init()` in `app.js` fetches categories, then preferences, then the first phrase, so the opening phrase already respects the restored filters instead of visibly swapping out. A saved category that's no longer offered is ignored rather than silently selecting nothing
+- [x] Expose an endpoint (e.g. `GET`/`PUT /api/me/preferences`) to read and update it — `app/routers/preferences.py`. `PUT` is a full replacement (an omitted field means "no filter"), `""` is normalized to `NULL` on write, and `GET` returns `{difficulty: null, category: null}` for a user who has never chosen anything so the frontend needs no special case
+- [x] Supporting work the feature needed: the frontend had a difficulty select but **no category filter at all**, so a stored category preference would have been unreachable — added a `#category-select` populated by a new `GET /api/phrases/categories` (distinct non-null categories, sorted) and wired into the random-phrase query
+- [x] Test coverage — `app/tests/test_preferences.py` (defaults, round-trip, replace-not-merge semantics, `""` normalization, invalid difficulty → 422, per-user scoping, 401 without a session) and 5 browser tests in `test_frontend.py` (category options populated, saved filters restored and applied to the *first* phrase request, selection persisted via `PUT`, stale category ignored, failed preference load falls back to no filters). Suite now 73 tests
 
 
 
@@ -144,7 +146,7 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 - [ ] Add Postgres connection env vars to `app/config.py` (host/port/db/user/password, or a single `DATABASE_URL`), following the existing fail-loudly pattern for required config
 - [ ] Update `app/db.py`'s `create_engine` call to build a `postgresql+psycopg://` URL instead of `sqlite:///`
 - [ ] `alembic init app/alembic`; wire `env.py`'s target metadata to `SQLModel.metadata` and its DB URL to `app/config.py`
-- [ ] Generate an initial migration capturing the current schema (`Phrase`, `Attempt`, `User`) and verify `alembic upgrade head` produces a schema matching today's `create_all()` output
+- [ ] Generate an initial migration capturing the current schema (`Phrase`, `Attempt`, `User`, `UserPreference`) and verify `alembic upgrade head` produces a schema matching today's `create_all()` output
 - [ ] Remove/replace the current `SQLModel.metadata.create_all()` startup call in `app/main.py`'s lifespan with an explicit migration step (documented in `README.md`/`CLAUDE.md`), not an automatic one
 - [ ] Update `app/tests/conftest.py`'s test isolation to spin up (or point at) a Postgres instance per test run instead of a SQLite temp file — likely a `testcontainers` Postgres or a dedicated `docker-compose` test service
 - [ ] Update `CLAUDE.md` (architecture notes, commands) and `README.md` (setup/config) once implemented
@@ -155,6 +157,6 @@ Schema changes move from `SQLModel.metadata.create_all()` (implicit, additive-on
 
 - [ ] Manual real-microphone pronunciation test in a browser (see Testing & verification above) — the one requirement that still needs a human to confirm.
 - [ ] Stand up Authentik and complete manual login/logout verification in a browser (see Authentication checklist above) — code is implemented and tested, but needs a human to bootstrap the real auth server and click through the flow.
-- [ ] Persist user choices in the database (see User preferences checklist above) — not yet started, depends on authentication being in place first.
+- [x] Persist user choices in the database (see User preferences checklist above) — done: `UserPreference` table, `GET`/`PUT /api/me/preferences`, and difficulty + category selects restored on load.
 - [ ] Speak button + hover-to-listen TTS (see Audio playback / TTS checklist above) — not yet started.
 - [ ] Migrate from SQLite to PostgreSQL with Alembic-managed schema (see Database checklist above) — not yet started.
