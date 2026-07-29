@@ -10,7 +10,7 @@ A local web app for practicing English pronunciation. Pick a phrase, record your
   - *phonetics drills* — minimal-pairs (ship/sheep, think/sink), numbers-and-dates (thirteen/thirty), idioms
 - **Speech-to-text** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, CPU, int8) transcribes your recording locally, no cloud API calls.
 - **Phoneme-level scoring** — both the target phrase and your transcript are converted to ARPAbet phonemes ([g2p_en](https://github.com/Kyubyong/g2p_en)) and compared with phoneme edit-distance, so the score reflects actual pronunciation accuracy rather than just "did Whisper understand the words." Per-word feedback shows expected vs. heard phonemes.
-- **Attempt history** — every recording, transcript, and score is saved per account, with a running average and per-phrase stats.
+- **Attempt history** — every recording, transcript, and score is saved to PostgreSQL per account, with a running average and per-phrase stats. Schema changes ship as [Alembic](https://alembic.sqlalchemy.org/) migrations.
 - **Saved preferences** — your difficulty and category filter selection is stored against your account and restored on your next visit, so you don't re-pick it every time.
 - **Authentication** — the whole app sits behind [Authentik](https://goauthentik.io/) (open-source OIDC), so history/stats are scoped to your own account.
 - **No build step** — the frontend is plain HTML/CSS/JS served directly by FastAPI.
@@ -35,7 +35,11 @@ echo "HOST_GID=$(id -g)" >> .env
 docker compose up -d
 ```
 
-`HOST_UID`/`HOST_GID` make the container run as your host user rather than root, so files written into the bind-mounted `data/` dir (the SQLite DB, saved recordings) are owned by you, not `root`.
+`HOST_UID`/`HOST_GID` make the container run as your host user rather than root, so files written into the bind-mounted `data/` dir (saved recordings, model caches) are owned by you, not `root`.
+
+`docker compose up` starts four services for the app: `pronunciation-coach-db` (PostgreSQL), a one-shot `pronunciation-coach-migrate` that runs `alembic upgrade head` and exits, then `pronunciation-coach` itself once the migration has completed successfully. Migrations are deliberately *not* applied from the app's startup, so a bad migration fails visibly in the migrate container instead of crash-looping the app.
+
+The database lives in a named Docker volume (`pronunciation-coach-db-data`), not in `data/` — so unlike the old SQLite file, **`docker compose down -v` destroys your practice history**. Plain `docker compose down` does not.
 
 Open http://localhost:8000, allow microphone access, and start recording.
 
@@ -47,18 +51,24 @@ Useful commands: `docker compose logs -f` (tail logs), `docker compose down` (st
 
 Running natively with `uv` is faster to iterate on when editing code, since `fastapi dev` gives you auto-reload.
 
-**Requirements:** Python 3.12+, [uv](https://docs.astral.sh/uv/), `ffmpeg` (used by faster-whisper's audio decoding).
+**Requirements:** Python 3.12+, [uv](https://docs.astral.sh/uv/), `ffmpeg` (used by faster-whisper's audio decoding), and a reachable PostgreSQL. The easiest one to borrow is the dev stack's, which publishes on host port 55432:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d pronunciation-coach-db
+export DATABASE_URL=postgresql+psycopg://pronunciation_coach:dev-insecure-app-postgres-password@127.0.0.1:55432/pronunciation_coach
+```
 
 ```bash
 uv sync
+uv run alembic upgrade head   # apply migrations first — the app no longer creates its own schema
 uv run fastapi dev
 ```
 
-Same first-run download behavior as above, into the same `data/` dir either way. For a production-style native run (no auto-reload): `uv run fastapi run`.
+Same first-run model/nltk download behavior as above, into the same `data/` dir either way. For a production-style native run (no auto-reload): `uv run fastapi run`.
 
 ## Authentication setup
 
-The whole app requires login via [Authentik](https://goauthentik.io/), a self-hosted OIDC identity provider that runs alongside the app as three more `docker-compose.yml` services (`authentik-db`, `authentik-server`, `authentik-worker`). One-time setup, before the app itself will start:
+The whole app requires login via [Authentik](https://goauthentik.io/), a self-hosted OIDC identity provider that runs alongside the app as three more `docker-compose.yml` services (`authentik-db`, `authentik-server`, `authentik-worker` — separate from the app's own `pronunciation-coach-db`). One-time setup, before the app itself will start:
 
 1. Make `authentik-server` resolvable from your browser, not just from inside Docker — the app (in-container) and your browser (on the host) both need to reach Authentik at the *same* hostname for OIDC discovery to produce a browser-usable login URL:
 
@@ -71,8 +81,11 @@ The whole app requires login via [Authentik](https://goauthentik.io/), a self-ho
    ```bash
    echo "AUTHENTIK_SECRET_KEY=$(openssl rand -base64 60 | tr -d '\n')" >> .env
    echo "AUTHENTIK_PG_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')" >> .env
+   echo "POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')" >> .env
    echo "SESSION_SECRET_KEY=$(openssl rand -base64 32 | tr -d '\n')" >> .env
    ```
+
+   `POSTGRES_PASSWORD` is this app's own database; `AUTHENTIK_PG_PASSWORD` is Authentik's. Both are required with no default — `docker compose up` refuses to start without them rather than falling back to something guessable.
 
 3. Bring up just Authentik first: `docker compose up -d authentik-db authentik-server authentik-worker`.
 4. Visit `http://authentik-server:9000/if/flow/initial-setup/` and set a password for the default `akadmin` user.
@@ -89,7 +102,7 @@ The whole app requires login via [Authentik](https://goauthentik.io/), a self-ho
 
 Visiting the app now redirects to Authentik's login page if you don't already have a session.
 
-**Upgrading an existing local install**: this release added a `user` table and a required `Attempt.user_id` column. There's no migration tooling yet (see `docs/SPEC.md`'s Database/Alembic entry) — delete `data/pronunciation_coach.db` before your first run on the new schema; it's recreated (and reseeded) automatically.
+**Upgrading an existing local install**: this release moved the database from SQLite to PostgreSQL. There is nothing to migrate — delete the old `data/pronunciation_coach.db` and bring the stack up; the migrate service creates the schema and the app reseeds the phrases on startup. Saved recordings under `data/audio/` are untouched, but the attempt rows that referenced them are not carried over. From here on, schema changes ship as Alembic migrations (`uv run alembic upgrade head`) rather than as "delete your database".
 
 ## Development stack (fully automated)
 
@@ -115,7 +128,11 @@ All configuration is via environment variables (see `app/config.py`), settable e
 |---|---|---|
 | `WHISPER_MODEL_SIZE` | `small.en` | faster-whisper model size (e.g. `base.en`, `medium.en`) |
 | `WHISPER_COMPUTE_TYPE` | `int8` | CTranslate2 compute type |
-| `PRONUNCIATION_COACH_DATA_DIR` | `./data` | Root directory for the SQLite DB, saved recordings, and model/nltk caches |
+| `PRONUNCIATION_COACH_DATA_DIR` | `./data` | Root directory for saved recordings and the model/nltk caches (not the database — that's Postgres) |
+| `POSTGRES_HOST` / `POSTGRES_PORT` | `localhost` / `5432` | This app's database server |
+| `POSTGRES_DB` / `POSTGRES_USER` | `pronunciation_coach` / `pronunciation_coach` | This app's database name and role |
+| `POSTGRES_PASSWORD` | *(required, no default)* | Password for this app's own database — distinct from `AUTHENTIK_PG_PASSWORD` below |
+| `DATABASE_URL` | *(unset)* | Full SQLAlchemy URL (e.g. `postgresql+psycopg://user:pw@host/db`). When set it overrides all five `POSTGRES_*` vars — the escape hatch for a managed database, a unix socket, or connection query params |
 | `HOST_UID` / `HOST_GID` | `1000` / `1000` | Docker only — UID/GID the container runs as, so bind-mounted files match your host user |
 | `SESSION_SECRET_KEY` | *(required, no default)* | Signs this app's own login session cookie — distinct from Authentik's own secret |
 | `AUTHENTIK_ISSUER` | *(required, no default)* | OIDC issuer URL of the Authentik Application, e.g. `http://authentik-server:9000/application/o/pronunciation-coach/` |
@@ -131,6 +148,19 @@ uv run ruff check .    # lint
 uv run ruff format .   # format
 ```
 
+The test suite needs no database setup: it starts a throwaway `postgres:16-alpine` via [testcontainers](https://testcontainers-python.readthedocs.io/) on first use, resets the schema, and applies the migrations. Only tests that actually touch the database trigger it — the browser-driven `frontend`-marked tests never start Docker. To run against an already-running Postgres instead (CI, or faster repeat runs), set `PRONUNCIATION_COACH_TEST_DATABASE_URL`; the suite drops and recreates the `public` schema at session start, and refuses to touch a database whose name doesn't contain `test`.
+
+### Migrations
+
+```bash
+uv run alembic upgrade head                        # apply pending migrations
+uv run alembic revision --autogenerate -m "..."    # after editing app/models.py
+uv run alembic check                               # models vs. migrations drift check
+uv run alembic downgrade -1                        # roll back one revision
+```
+
+Autogenerate diffs `app/models.py` against the *live* database, so point it at one that's already at head. Always read the generated revision before committing it — autogenerate is a first draft, not an oracle. `alembic check` also runs as a test (`app/tests/test_migrations.py`), so a model change without a migration fails the suite rather than surfacing as a missing column at runtime.
+
 See `CLAUDE.md` for architecture notes.
 
 ## Project layout
@@ -138,20 +168,23 @@ See `CLAUDE.md` for architecture notes.
 ```
 app/
 ├── main.py         # FastAPI app, startup lifespan, router/frontend wiring
-├── config.py        # env-driven paths
-├── db.py             # SQLModel engine/session
-├── auth.py            # OIDC client, get_current_user/require_web_session, User upsert
-├── models.py            # Phrase, Attempt, User, UserPreference table models
+├── __init__.py      # SQLModel constraint naming convention (must load before models)
+├── config.py         # env-driven paths and database URL
+├── db.py              # SQLModel engine/session
+├── alembic/            # migration environment + versions/
+├── auth.py              # OIDC client, get_current_user/require_web_session, User upsert
+├── models.py             # Phrase, Attempt, User, UserPreference table models
 ├── schemas.py             # API request/response models
-├── seed_data.py             # built-in practice phrases
-├── ml.py                     # Whisper + G2p model loading
-├── scoring.py                 # phoneme alignment & scoring algorithm
-├── routers/                    # /api/phrases, /api/attempts, /auth/*, /api/me[/preferences]
-└── tests/                        # pytest suite
+├── seed_data.py            # built-in practice phrases
+├── ml.py                    # Whisper + G2p model loading
+├── scoring.py                # phoneme alignment & scoring algorithm
+├── routers/                   # /api/phrases, /api/attempts, /auth/*, /api/me[/preferences]
+└── tests/                      # pytest suite
 frontend/
 ├── index.html
 ├── app.js            # recording, submission, results rendering
 └── style.css
+alembic.ini
 Dockerfile
 docker-compose.yml
 docker-compose.dev.yml   # standalone dev stack, Authentik auto-configured

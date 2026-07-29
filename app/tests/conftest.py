@@ -5,6 +5,30 @@ from pathlib import Path
 _TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="pronunciation_coach_test_"))
 os.environ["PRONUNCIATION_COACH_DATA_DIR"] = str(_TEST_DATA_DIR)
 
+# --- Postgres ------------------------------------------------------------
+#
+# The URL has to be decided *here*, as top-level module code, because app/db.py
+# builds its engine at import time from app.config. But create_engine() does not
+# connect, so the server itself may come up later — which is what lets the
+# container start lazily in the `database` fixture rather than on every pytest
+# invocation. The frontend-marked tests never request `client`, so they never
+# touch Docker at all.
+#
+# PRONUNCIATION_COACH_TEST_DATABASE_URL points the suite at an already-running
+# Postgres (a compose service, a CI service container) and skips the container
+# entirely. Otherwise a throwaway postgres:16-alpine is started, bound to a
+# fixed host port so the URL is knowable in advance.
+#
+# This *overwrites* DATABASE_URL rather than setdefault-ing it: an exported
+# DATABASE_URL in the developer's shell points at their real database, and
+# _reset_schema() below would drop it.
+_EXTERNAL_DATABASE_URL = os.environ.get("PRONUNCIATION_COACH_TEST_DATABASE_URL")
+_CONTAINER_HOST_PORT = int(os.environ.get("PRONUNCIATION_COACH_TEST_PG_PORT", "55432"))
+TEST_DATABASE_URL = _EXTERNAL_DATABASE_URL or (
+    f"postgresql+psycopg://test:test@127.0.0.1:{_CONTAINER_HOST_PORT}/test"
+)
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
 # Dummy auth config: authlib only fetches OIDC metadata lazily, on the first
 # call to authorize_redirect/authorize_access_token — no test exercises the
 # real login flow, so these values are never actually used over the network.
@@ -25,17 +49,85 @@ from urllib.parse import urlparse
 import pytest
 from fastapi.testclient import TestClient
 from playwright.sync_api import Page, Route
+from sqlalchemy import make_url, text
 from sqlmodel import Session
 
 from app import config
 from app.auth import get_current_user
 from app.db import engine
 from app.main import app
+from app.ml import load_g2p
 from app.models import User
 
 
+def _reset_schema() -> None:
+    """Drop and recreate `public`, so every session starts from nothing.
+
+    A no-op for a container this session just started; load-bearing for the
+    PRONUNCIATION_COACH_TEST_DATABASE_URL path, where the database survives
+    between runs. Several tests assert *exact* row counts and several insert
+    users with a hard-coded unique `sub` — both break on the second run against
+    a database that kept its rows.
+    """
+    database_name = make_url(TEST_DATABASE_URL).database or ""
+    if "test" not in database_name:
+        raise RuntimeError(
+            f"refusing to drop the schema of database {database_name!r}: the "
+            "test database's name must contain 'test'"
+        )
+    with engine.begin() as connection:
+        connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        connection.execute(text("CREATE SCHEMA public"))
+    # psycopg3 auto-prepares statements after a few executions, and a pooled
+    # connection that outlived the schema it planned against fails with
+    # "cached plan must not change result type". Cheap insurance.
+    engine.dispose()
+
+
+def _upgrade_to_head() -> None:
+    """Apply the Alembic migrations — the schema is no longer create_all()'d."""
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_config = Config(str(config.BASE_DIR / "alembic.ini"))
+    # env.py honours this; fileConfig() would otherwise tear down pytest's own
+    # logging handlers halfway through the session.
+    alembic_config.attributes["configure_logger"] = False
+    command.upgrade(alembic_config, "head")
+
+
 @pytest.fixture(scope="session")
-def client():
+def database():
+    """A Postgres with the schema at head. Every DB-touching test needs this.
+
+    Session-scoped and deliberately *not* rolled back between tests — that
+    matches the pre-Postgres behaviour exactly (one shared database per run,
+    rows accumulate), so no existing assertion changes meaning.
+    """
+    container = None
+    if _EXTERNAL_DATABASE_URL is None:
+        from testcontainers.community.postgres import PostgresContainer
+
+        container = PostgresContainer(
+            "postgres:16-alpine",
+            username="test",
+            password="test",
+            dbname="test",
+            driver="psycopg",
+        ).with_bind_ports(5432, _CONTAINER_HOST_PORT)
+        container.start()
+    try:
+        _reset_schema()
+        _upgrade_to_head()
+        yield TEST_DATABASE_URL
+    finally:
+        engine.dispose()
+        if container is not None:
+            container.stop()
+
+
+@pytest.fixture(scope="session")
+def client(database):
     with TestClient(app) as test_client:
         with Session(engine) as session:
             user = User(sub="test-sub", email="tester@example.com")
@@ -45,6 +137,18 @@ def client():
         app.dependency_overrides[get_current_user] = lambda: user
         yield test_client
         app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture(scope="session")
+def g2p():
+    """The real G2p, without the app — and therefore without the database.
+
+    test_scoring.py only ever wanted the model, never a server; reaching it via
+    `client` made two pure-function tests pay for a Whisper load and a Postgres
+    container.
+    """
+    config.NLTK_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return load_g2p()
 
 
 # --- Frontend (browser) test support -------------------------------------

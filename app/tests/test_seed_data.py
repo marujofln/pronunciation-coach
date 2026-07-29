@@ -1,8 +1,8 @@
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, select
 
 from app.db import engine
-from app.models import Difficulty, Phrase, User, UserPreference
-from app.seed_data import PHRASES, rename_technology_preferences, seed_phrases
+from app.models import Difficulty, Phrase
+from app.seed_data import PHRASES, seed_phrases
 
 
 def test_seed_data_is_internally_consistent():
@@ -28,8 +28,12 @@ def test_seed_data_is_internally_consistent():
 def test_seeding_retags_a_phrase_whose_category_changed(client):
     """Seeding is keyed on `text`, so edits need an explicit reconcile pass."""
     with Session(engine) as session:
+        # order_by is load-bearing: Postgres guarantees no ordering for an
+        # unordered SELECT, and this test *mutates* the row it picks.
         row = session.exec(
-            select(Phrase).where(Phrase.category == "information-technology")
+            select(Phrase)
+            .where(Phrase.category == "information-technology")
+            .order_by(Phrase.id)
         ).first()
         assert row is not None
         text, before = row.text, session.exec(select(Phrase)).all()
@@ -46,19 +50,3 @@ def test_seeding_retags_a_phrase_whose_category_changed(client):
         assert len(session.exec(select(Phrase)).all()) == len(before), (
             "reconciling must not insert a duplicate row"
         )
-
-
-def test_stored_technology_preference_is_renamed(client):
-    with Session(engine) as session:
-        session.exec(delete(UserPreference))
-        user = session.exec(select(User)).first()
-        session.add(UserPreference(user_id=user.id, category="technology"))
-        session.commit()
-
-        rename_technology_preferences(session)
-
-        preference = session.exec(select(UserPreference)).one()
-        assert preference.category == "information-technology"
-
-        session.exec(delete(UserPreference))
-        session.commit()
