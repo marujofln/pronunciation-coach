@@ -1,8 +1,7 @@
-# Standalone development stack: the whole app + a fully auto-configured
-# Authentik, no manual UI clicking or .env setup required.
+# Standalone development stack: the whole app with dev-only secrets baked in,
+# so it comes up with no .env setup at all.
 #
 # Usage:
-#   echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts   # one-time, see README
 #   git switch dev
 #   docker compose -f docker-compose.dev.yml up -d --build
 #
@@ -14,7 +13,7 @@
 # ALL secrets below are hardcoded, non-random, dev-only placeholders on
 # purpose - this file is meant to be safe to commit and share. NEVER reuse
 # any of these values for a real/shared/internet-facing deployment; use the
-# regular docker-compose.yml + README's "Authentication setup" for that.
+# regular docker-compose.yml for that.
 #
 # This is a full duplicate of docker-compose.yml's services, not an override
 # layer, and uses its own volume names so it never collides with data from
@@ -26,20 +25,11 @@
 name: pronunciation-coach-dev
 
 x-dev-secrets:
-  session_secret: &dev_session_secret dev-insecure-session-secret-do-not-use-in-production
-  authentik_secret_key: &dev_authentik_secret_key dev-insecure-authentik-secret-key-do-not-use-in-production
-  pg_password: &dev_pg_password dev-insecure-postgres-password
   app_pg_password: &dev_app_pg_password dev-insecure-app-postgres-password
-  client_id: &dev_client_id dev-oauth-client-id
-  client_secret: &dev_client_secret dev-oauth-client-secret
 
 # Shared by the app and the migration runner: both need the same database, and
-# Alembic's env.py imports app/config.py, so it needs the auth vars too.
+# Alembic's env.py imports app/config.py, so it needs the same vars the app does.
 x-app-env: &app-env
-  SESSION_SECRET_KEY: *dev_session_secret
-  AUTHENTIK_ISSUER: http://authentik-server:9000/application/o/pronunciation-coach/
-  AUTHENTIK_CLIENT_ID: *dev_client_id
-  AUTHENTIK_CLIENT_SECRET: *dev_client_secret
   POSTGRES_HOST: pronunciation-coach-db
   POSTGRES_PORT: "5432"
   POSTGRES_DB: pronunciation_coach
@@ -63,16 +53,12 @@ services:
       WHISPER_MODEL_SIZE: small.en
       WHISPER_COMPUTE_TYPE: int8
     depends_on:
-      authentik-server:
-        condition: service_started
       pronunciation-coach-db:
         condition: service_healthy
       pronunciation-coach-migrate:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  # --- This app's own Postgres, separate from Authentik's (authentik-db below)
-  # so wiping one doesn't take the other's data with it.
   pronunciation-coach-db:
     image: docker.io/library/postgres:16-alpine
     restart: unless-stopped
@@ -106,80 +92,5 @@ services:
     # Quoted: a bare `no` is the YAML boolean false.
     restart: "no"
 
-  authentik-db:
-    image: docker.io/library/postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: authentik
-      POSTGRES_USER: authentik
-      POSTGRES_PASSWORD: *dev_pg_password
-    volumes:
-      - authentik-db-data-dev:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  authentik-server:
-    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.6}
-    command: server
-    restart: unless-stopped
-    depends_on:
-      authentik-db:
-        condition: service_healthy
-    environment:
-      AUTHENTIK_SECRET_KEY: *dev_authentik_secret_key
-      AUTHENTIK_POSTGRESQL__HOST: authentik-db
-      AUTHENTIK_POSTGRESQL__NAME: authentik
-      AUTHENTIK_POSTGRESQL__USER: authentik
-      AUTHENTIK_POSTGRESQL__PASSWORD: *dev_pg_password
-      # Needed here as well as on the worker, not just there: the blueprint is
-      # mounted into BOTH containers, and whichever one applies it resolves
-      # !Env at that moment. Without these the server renders client_id as the
-      # literal string "None", the provider fails serializer validation, and
-      # NOTHING is created — so /application/o/pronunciation-coach/.well-known/
-      # openid-configuration 404s and every /auth/login 500s on discovery.
-      AUTHENTIK_CLIENT_ID: *dev_client_id
-      AUTHENTIK_CLIENT_SECRET: *dev_client_secret
-    ports:
-      - "9000:9000"
-      - "9443:9443"
-    volumes:
-      - authentik-media-dev:/data
-      - ./authentik-blueprints:/blueprints/custom:ro
-    shm_size: 512mb
-
-  authentik-worker:
-    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.6}
-    command: worker
-    restart: unless-stopped
-    depends_on:
-      authentik-db:
-        condition: service_healthy
-    environment:
-      AUTHENTIK_SECRET_KEY: *dev_authentik_secret_key
-      AUTHENTIK_POSTGRESQL__HOST: authentik-db
-      AUTHENTIK_POSTGRESQL__NAME: authentik
-      AUTHENTIK_POSTGRESQL__USER: authentik
-      AUTHENTIK_POSTGRESQL__PASSWORD: *dev_pg_password
-      # Only read on first startup, against a fresh authentik-db-data-dev
-      # volume - auto-creates the akadmin superuser, skipping the manual
-      # /if/flow/initial-setup/ step.
-      AUTHENTIK_BOOTSTRAP_PASSWORD: dev-insecure-akadmin-password
-      AUTHENTIK_BOOTSTRAP_EMAIL: akadmin@localhost
-      # Read by the blueprint in ./authentik-blueprints via !Env - must match
-      # the pronunciation-coach service's own AUTHENTIK_CLIENT_ID/SECRET above,
-      # and authentik-server's copy of the same pair.
-      AUTHENTIK_CLIENT_ID: *dev_client_id
-      AUTHENTIK_CLIENT_SECRET: *dev_client_secret
-    volumes:
-      - authentik-media-dev:/data
-      - ./authentik-blueprints:/blueprints/custom:ro
-    shm_size: 512mb
-
 volumes:
   pronunciation-coach-db-data-dev:
-  authentik-db-data-dev:
-  authentik-media-dev:

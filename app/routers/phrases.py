@@ -1,19 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func
 from sqlmodel import select
 
-from app.auth import get_current_user
 from app.db import SessionDep
 from app.models import Difficulty, Phrase
 from app.schemas import PhraseRead
 
-router = APIRouter(
-    prefix="/api/phrases",
-    tags=["phrases"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/api/phrases", tags=["phrases"])
 
 
 def _filtered_query(

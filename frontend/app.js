@@ -25,13 +25,11 @@ const els = {
   transcriptText: document.getElementById("transcript-text"),
   statsSummary: document.getElementById("stats-summary"),
   historyList: document.getElementById("history-list"),
-  userMenu: document.getElementById("user-menu"),
-  userMenuBtn: document.getElementById("user-menu-btn"),
-  userTooltip: document.getElementById("user-tooltip"),
-  userDropdown: document.getElementById("user-dropdown"),
-  userDropdownEmail: document.getElementById("user-dropdown-email"),
-  logoutLink: document.getElementById("logout-link"),
 };
+
+// Preferences live in the browser, not the database: this is a single-user
+// local app, so there is no account to hang them off.
+const PREFS_KEY = "pronunciation-coach:preferences";
 
 function setStatus(message) {
   els.statusLine.textContent = message || "";
@@ -85,38 +83,6 @@ function updateSpeakButton() {
   els.speakBtn.disabled = !state.currentPhrase || state.isRecording;
 }
 
-async function loadCurrentUser() {
-  try {
-    const res = await fetch("/api/me");
-    if (!res.ok) return;
-    const me = await res.json();
-    const label = me.email || `user #${me.id}`;
-    els.userTooltip.textContent = label;
-    els.userDropdownEmail.textContent = label;
-    els.userMenu.hidden = false;
-  } catch {
-    // non-fatal — leave the user menu hidden
-  }
-}
-
-function openUserMenu() {
-  els.userDropdown.hidden = false;
-  els.userMenuBtn.setAttribute("aria-expanded", "true");
-}
-
-function closeUserMenu() {
-  els.userDropdown.hidden = true;
-  els.userMenuBtn.setAttribute("aria-expanded", "false");
-}
-
-function toggleUserMenu() {
-  if (els.userDropdown.hidden) {
-    openUserMenu();
-  } else {
-    closeUserMenu();
-  }
-}
-
 async function loadCategories() {
   try {
     const res = await fetch("/api/phrases/categories");
@@ -141,11 +107,13 @@ function categoryLabel(category) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-async function loadPreferences() {
+// Both halves are wrapped: localStorage throws outright when storage is
+// blocked (private mode, third-party-cookie policies), and JSON.parse throws
+// on a hand-edited or truncated value. Neither is worth failing startup over —
+// the app just opens on the "Any" defaults.
+function loadPreferences() {
   try {
-    const res = await fetch("/api/me/preferences");
-    if (!res.ok) return;
-    const prefs = await res.json();
+    const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
     // A saved value for an option that no longer exists would silently select
     // nothing, so only apply what the select actually offers.
     if (hasOption(els.difficultySelect, prefs.difficulty)) {
@@ -164,16 +132,15 @@ function hasOption(select, value) {
   return [...select.options].some((option) => option.value === value);
 }
 
-async function savePreferences() {
+function savePreferences() {
   try {
-    await fetch("/api/me/preferences", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({
         difficulty: els.difficultySelect.value || null,
         category: els.categorySelect.value || null,
       }),
-    });
+    );
   } catch {
     // non-fatal — the filter still applies to this session, it just won't stick
   }
@@ -416,44 +383,17 @@ els.feedbackWords.addEventListener("click", (e) => {
   if (target) speak(target.dataset.speak);
 });
 
-// Firefox keeps speaking across a navigation, and Logout is a plain <a href>;
-// don't leave a disembodied voice behind after the session ends.
+// Firefox keeps speaking across a navigation; don't leave a disembodied voice
+// behind after the page goes away.
 window.addEventListener("pagehide", stopSpeaking);
 
-els.userMenuBtn.addEventListener("click", (e) => {
-  // Without this the document listener below sees the same click and
-  // immediately closes what we just opened.
-  e.stopPropagation();
-  toggleUserMenu();
-});
-
-els.userMenuBtn.addEventListener("keydown", (e) => {
-  if (e.key === "ArrowDown") {
-    e.preventDefault();
-    openUserMenu();
-    els.logoutLink.focus();
-  }
-});
-
-document.addEventListener("click", (e) => {
-  if (!els.userMenu.contains(e.target)) closeUserMenu();
-});
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !els.userDropdown.hidden) {
-    closeUserMenu();
-    els.userMenuBtn.focus();
-  }
-});
-
 async function init() {
-  loadCurrentUser();
   loadHistory();
   loadStats();
   // Sequential on purpose: the saved category can only be selected once its
   // <option> exists, and the first phrase must respect the restored filters.
   await loadCategories();
-  await loadPreferences();
+  loadPreferences();
   loadRandomPhrase();
 }
 

@@ -35,18 +35,12 @@ def _database_url() -> str:
         port=int(os.environ.get("POSTGRES_PORT", "5432")),
         database=os.environ.get("POSTGRES_DB", "pronunciation_coach"),
         username=os.environ.get("POSTGRES_USER", "pronunciation_coach"),
-        # Security-sensitive: no default, same reasoning as the auth config
-        # below. Only reached on this branch, so a DATABASE_URL-driven run
-        # (the test suite, a managed database) never needs it.
+        # Security-sensitive: no default. Fail loudly rather than fall back to
+        # something guessable. Only reached on this branch, so a
+        # DATABASE_URL-driven run (the test suite, a managed database) never
+        # needs it.
         password=os.environ["POSTGRES_PASSWORD"],
     ).render_as_string(hide_password=False)
 
 
 DATABASE_URL = _database_url()
-
-# Security-sensitive: no defaults. Fail loudly rather than run with an
-# insecure/empty session secret or a misconfigured OIDC client.
-AUTHENTIK_ISSUER = os.environ["AUTHENTIK_ISSUER"]
-AUTHENTIK_CLIENT_ID = os.environ["AUTHENTIK_CLIENT_ID"]
-AUTHENTIK_CLIENT_SECRET = os.environ["AUTHENTIK_CLIENT_SECRET"]
-SESSION_SECRET_KEY = os.environ["SESSION_SECRET_KEY"]

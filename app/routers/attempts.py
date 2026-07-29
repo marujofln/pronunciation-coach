@@ -5,7 +5,6 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from sqlmodel import select
 
 from app import config
-from app.auth import CurrentUserDep
 from app.db import SessionDep
 from app.ml import G2pDep, WhisperModelDep, transcribe_audio
 from app.models import Attempt, Phrase
@@ -33,7 +32,6 @@ def submit_attempt(
     session: SessionDep,
     whisper_model: WhisperModelDep,
     g2p: G2pDep,
-    current_user: CurrentUserDep,
     phrase_id: Annotated[int, Form()],
     audio: Annotated[UploadFile, File()],
 ) -> AttemptResult:
@@ -51,7 +49,6 @@ def submit_attempt(
 
     attempt = Attempt(
         phrase_id=phrase.id,
-        user_id=current_user.id,
         transcript=transcript,
         score=score,
         word_feedback=[wf.model_dump() for wf in word_feedback],
@@ -75,16 +72,10 @@ def submit_attempt(
 @router.get("/")
 def list_attempts(
     session: SessionDep,
-    current_user: CurrentUserDep,
     limit: Annotated[int, Query(le=200)] = 50,
     phrase_id: Annotated[int | None, Query()] = None,
 ) -> list[AttemptRead]:
-    query = (
-        select(Attempt)
-        .where(Attempt.user_id == current_user.id)
-        .order_by(Attempt.created_at.desc())
-        .limit(limit)
-    )
+    query = select(Attempt).order_by(Attempt.created_at.desc()).limit(limit)
     if phrase_id is not None:
         query = query.where(Attempt.phrase_id == phrase_id)
     attempts = session.exec(query).all()
@@ -103,10 +94,8 @@ def list_attempts(
 
 
 @router.get("/stats")
-def get_attempt_stats(session: SessionDep, current_user: CurrentUserDep) -> StatsRead:
-    attempts = session.exec(
-        select(Attempt).where(Attempt.user_id == current_user.id)
-    ).all()
+def get_attempt_stats(session: SessionDep) -> StatsRead:
+    attempts = session.exec(select(Attempt)).all()
     total_attempts = len(attempts)
     average_score = (
         round(sum(a.score for a in attempts) / total_attempts, 1)

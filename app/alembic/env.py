@@ -7,7 +7,7 @@ from sqlmodel import SQLModel
 from app import config as app_config
 
 # Importing the models module is the whole point of this import: it is what
-# registers Phrase/User/UserPreference/Attempt on SQLModel.metadata. Without it
+# registers Phrase/Attempt on SQLModel.metadata. Without it
 # autogenerate diffs the live database against *empty* metadata and cheerfully
 # writes a migration that drops every table.
 from app import models  # noqa: F401
