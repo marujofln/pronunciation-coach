@@ -135,6 +135,14 @@ services:
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: *dev_pg_password
+      # Needed here as well as on the worker, not just there: the blueprint is
+      # mounted into BOTH containers, and whichever one applies it resolves
+      # !Env at that moment. Without these the server renders client_id as the
+      # literal string "None", the provider fails serializer validation, and
+      # NOTHING is created — so /application/o/pronunciation-coach/.well-known/
+      # openid-configuration 404s and every /auth/login 500s on discovery.
+      AUTHENTIK_CLIENT_ID: *dev_client_id
+      AUTHENTIK_CLIENT_SECRET: *dev_client_secret
     ports:
       - "9000:9000"
       - "9443:9443"
@@ -162,7 +170,8 @@ services:
       AUTHENTIK_BOOTSTRAP_PASSWORD: dev-insecure-akadmin-password
       AUTHENTIK_BOOTSTRAP_EMAIL: akadmin@localhost
       # Read by the blueprint in ./authentik-blueprints via !Env - must match
-      # the pronunciation-coach service's own AUTHENTIK_CLIENT_ID/SECRET above.
+      # the pronunciation-coach service's own AUTHENTIK_CLIENT_ID/SECRET above,
+      # and authentik-server's copy of the same pair.
       AUTHENTIK_CLIENT_ID: *dev_client_id
       AUTHENTIK_CLIENT_SECRET: *dev_client_secret
     volumes:
