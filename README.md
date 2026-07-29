@@ -154,3 +154,7 @@ Dockerfile
 docker-compose.yml
 docker-compose.dev.yml   # standalone dev stack with dev-only secrets
 ```
+
+## License
+
+This project is licensed under the BSD 3-Clause License. See [LICENSE](LICENSE) for details.

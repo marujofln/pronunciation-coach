@@ -3,6 +3,7 @@ name = "pronunciation-coach"
 version = "0.2.0"
 description = "Local web app for practicing English pronunciation with Whisper-based phoneme scoring"
 readme = "README.md"
+license = "BSD-3-Clause"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.5",
