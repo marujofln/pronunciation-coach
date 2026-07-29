@@ -1,4 +1,6 @@
+import asyncio
 import re
+from urllib.parse import parse_qs, urlparse
 
 from sqlmodel import Session
 
@@ -7,6 +9,7 @@ from app.auth import get_current_user, require_web_session
 from app.db import engine
 from app.main import app
 from app.models import User
+from app.routers import auth as auth_router
 from app.tests.test_api import make_synthetic_wav
 
 FRONTEND_DIR = config.BASE_DIR / "frontend"
@@ -72,6 +75,71 @@ def test_attempts_are_scoped_per_user(client):
 
     final_history = client.get("/api/attempts/", params={"limit": 200}).json()
     assert len(final_history) == original_count
+
+
+END_SESSION = "http://authentik.invalid/application/o/pronunciation-coach/end-session/"
+
+
+class _FakeRequest:
+    """_end_session_url only ever reads base_url off the request."""
+
+    base_url = "http://testserver/"
+
+
+def _stub_metadata(monkeypatch, metadata: dict | None, *, raises: bool = False):
+    async def load_server_metadata():
+        if raises:
+            raise OSError("authentik unreachable")
+        return metadata
+
+    monkeypatch.setattr(
+        auth_router.oauth.authentik, "load_server_metadata", load_server_metadata
+    )
+
+
+def _end_session_url(id_token: str | None) -> str:
+    return asyncio.run(auth_router._end_session_url(_FakeRequest(), id_token))
+
+
+def test_logout_redirects_to_the_idp_end_session_endpoint(monkeypatch):
+    """Clearing only our own cookie lets Authentik silently re-authorize."""
+    _stub_metadata(monkeypatch, {"end_session_endpoint": END_SESSION})
+
+    parsed = urlparse(_end_session_url("an-id-token"))
+
+    assert parsed.path == "/application/o/pronunciation-coach/end-session/"
+    query = parse_qs(parsed.query)
+    assert query["post_logout_redirect_uri"] == ["http://testserver/"]
+    # Without the hint Authentik interrupts logout with a confirmation page.
+    assert query["id_token_hint"] == ["an-id-token"]
+
+
+def test_logout_omits_id_token_hint_when_absent(monkeypatch):
+    _stub_metadata(monkeypatch, {"end_session_endpoint": END_SESSION})
+
+    assert "id_token_hint" not in parse_qs(urlparse(_end_session_url(None)).query)
+
+
+def test_logout_falls_back_to_home_when_idp_is_unreachable(monkeypatch):
+    """A logout that 500s because the IdP is down is worse than a local one."""
+    _stub_metadata(monkeypatch, None, raises=True)
+
+    assert _end_session_url("tok") == "/"
+
+
+def test_logout_falls_back_when_metadata_has_no_end_session(monkeypatch):
+    _stub_metadata(monkeypatch, {})
+
+    assert _end_session_url("tok") == "/"
+
+
+def test_logout_clears_the_local_session(client):
+    """Whatever the IdP does, our own cookie must not survive logout."""
+    res = client.get("/auth/logout", follow_redirects=False)
+
+    assert res.status_code in (302, 307)
+    # Starlette clears a signed session by emptying the cookie.
+    assert client.cookies.get("session") in (None, "", '""')
 
 
 def test_frontend_redirects_to_login_without_session(client):
