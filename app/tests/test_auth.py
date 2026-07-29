@@ -170,7 +170,7 @@ def test_docs_are_not_behind_the_frontend_auth_gate(client):
 
 
 def test_index_html_defines_every_element_id_app_js_uses():
-    """app.js resolves all 22 elements at load; a renamed id blanks the page."""
+    """app.js resolves all 23 elements at load; a renamed id blanks the page."""
     app_js = (FRONTEND_DIR / "app.js").read_text()
     index_html = (FRONTEND_DIR / "index.html").read_text()
 

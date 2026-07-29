@@ -66,7 +66,8 @@ header h1 {
   text-align: left;
 }
 
-.user-icon {
+/* Round glyph button — shared by the account menu and the speak button. */
+.icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -79,20 +80,23 @@ header h1 {
   color: var(--muted);
 }
 
-.user-icon:hover,
-.user-icon:focus-visible,
-.user-icon[aria-expanded="true"] {
+/* Chrome still applies :hover to a disabled button, so guard it — same
+   reason button#submit-btn:hover does below. */
+.icon-btn:hover:not(:disabled),
+.icon-btn:focus-visible,
+.icon-btn[aria-expanded="true"] {
   color: var(--accent);
   border-color: var(--accent);
 }
 
-.user-icon svg {
+.icon-btn svg {
   width: 20px;
   height: 20px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
   stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .user-tooltip {
@@ -225,10 +229,22 @@ button.recording {
   background: var(--missing);
 }
 
+.phrase-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 #phrase-text {
+  flex: 1;
   font-size: 1.3rem;
   font-weight: 600;
   margin: 0.5rem 0;
+}
+
+/* The speak button shouldn't squash to nothing next to a long phrase. */
+#speak-btn {
+  flex: none;
 }
 
 .badges {
@@ -282,6 +298,16 @@ audio#preview {
   border-radius: 6px;
   margin-right: 0.15rem;
   cursor: help;
+}
+
+/* Only words that carry playback text are clickable; the rest keep the
+   `help` cursor for their expected-vs-heard phoneme tooltip. */
+.word[data-speak] {
+  cursor: pointer;
+}
+
+.word[data-speak]:hover {
+  background: var(--bg);
 }
 
 .word.correct {

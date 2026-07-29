@@ -11,7 +11,7 @@
   <h1>Pronunciation Coach</h1>
   <p class="subtitle">Practice your English pronunciation and get instant feedback.</p>
   <div class="user-menu" id="user-menu" hidden>
-    <button id="user-menu-btn" type="button" class="user-icon"
+    <button id="user-menu-btn" type="button" class="icon-btn user-icon"
             aria-haspopup="menu" aria-expanded="false" aria-label="Account menu">
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <circle cx="12" cy="8" r="3.75" />
@@ -44,7 +44,17 @@
     </div>
 
     <div id="phrase-display">
-      <p class="phrase-text" id="phrase-text">Loading a phrase…</p>
+      <div class="phrase-row">
+        <p class="phrase-text" id="phrase-text">Loading a phrase…</p>
+        <button id="speak-btn" type="button" class="icon-btn" disabled
+                aria-label="Listen to the phrase" title="Listen to the phrase">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z" />
+            <path d="M16 8.5a5 5 0 0 1 0 7" />
+            <path d="M18.5 6a8.5 8.5 0 0 1 0 12" />
+          </svg>
+        </button>
+      </div>
       <div class="badges">
         <span class="badge" id="phrase-difficulty"></span>
         <span class="badge" id="phrase-category"></span>
