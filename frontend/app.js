@@ -4,6 +4,7 @@ const state = {
   chunks: [],
   recordedBlob: null,
   isRecording: false,
+  hoverSpeakTimer: null,
 };
 
 const els = {
@@ -11,6 +12,7 @@ const els = {
   categorySelect: document.getElementById("category-select"),
   newPhraseBtn: document.getElementById("new-phrase-btn"),
   phraseText: document.getElementById("phrase-text"),
+  speakBtn: document.getElementById("speak-btn"),
   phraseDifficulty: document.getElementById("phrase-difficulty"),
   phraseCategory: document.getElementById("phrase-category"),
   recordBtn: document.getElementById("record-btn"),
@@ -33,6 +35,54 @@ const els = {
 
 function setStatus(message) {
   els.statusLine.textContent = message || "";
+}
+
+// --- speech synthesis ----------------------------------------------------
+
+// Long enough that incidental mouse travel across the feedback line doesn't
+// trigger a word, short enough not to feel unresponsive when you do mean it.
+// Also deliberately above Chrome's ~500ms native `title` delay, so a word's
+// phoneme tooltip appears first and the audio follows it rather than racing.
+const HOVER_SPEAK_DELAY_MS = 700;
+
+// Web Speech API availability is browser/OS dependent, so every entry point
+// degrades to a silent no-op rather than throwing.
+function canSpeak() {
+  return Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance);
+}
+
+// Both halves of "stop": the utterance already being spoken *and* the one a
+// hover armed but hasn't fired yet. Callers only ever want both, and missing
+// the timer is the subtle half — cancel() alone leaves it to fire later.
+function stopSpeaking() {
+  clearTimeout(state.hoverSpeakTimer);
+  state.hoverSpeakTimer = null;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+function speak(text) {
+  if (!canSpeak() || !text) return;
+  // Speaker output feeds straight back into getUserMedia on the laptops this
+  // is built for, so speaking mid-recording would corrupt the very audio
+  // about to be scored. The button is disabled too; this covers hover.
+  if (state.isRecording) return;
+  // Stop first, unconditionally: this is what makes a repeated click, or a
+  // fast hover from one word to the next, *replace* what's playing instead
+  // of queueing behind it. Every entry point gets it without remembering to.
+  stopSpeaking();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-US";
+  window.speechSynthesis.speak(utterance);
+}
+
+function speakCurrentPhrase() {
+  if (state.currentPhrase) speak(state.currentPhrase.text);
+}
+
+// Nothing to say before the first phrase lands (or after one fails to), and
+// nothing that should be said into an open microphone.
+function updateSpeakButton() {
+  els.speakBtn.disabled = !state.currentPhrase || state.isRecording;
 }
 
 async function loadCurrentUser() {
@@ -142,6 +192,13 @@ async function loadRandomPhrase() {
   if (category) url.searchParams.set("category", category);
 
   els.phraseText.textContent = "Loading a phrase…";
+  // Here rather than in renderPhrase(): this is where the old phrase actually
+  // goes away, and renderPhrase only runs after an unbounded await below — a
+  // hover armed just before "New phrase" would otherwise fire during the
+  // fetch. The failure path below never reaches renderPhrase at all.
+  state.currentPhrase = null;
+  stopSpeaking();
+  updateSpeakButton();
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`No phrase found (${res.status})`);
@@ -160,6 +217,7 @@ function renderPhrase(phrase) {
     ? categoryLabel(phrase.category)
     : "";
   els.phraseCategory.hidden = !phrase.category;
+  updateSpeakButton();
   resetRecording();
   els.resultsCard.hidden = true;
 }
@@ -204,6 +262,9 @@ async function startRecording() {
 
     state.mediaRecorder.start();
     state.isRecording = true;
+    // Playback into an open microphone would end up in the scored audio.
+    stopSpeaking();
+    updateSpeakButton();
     els.recordBtn.textContent = "■ Stop";
     els.recordBtn.classList.add("recording");
     setStatus("Recording… speak the phrase above.");
@@ -218,6 +279,7 @@ function stopRecording() {
   if (state.mediaRecorder && state.isRecording) {
     state.mediaRecorder.stop();
     state.isRecording = false;
+    updateSpeakButton();
     els.recordBtn.textContent = "● Record";
     els.recordBtn.classList.remove("recording");
     setStatus("Recording captured. Review it, then submit.");
@@ -260,6 +322,9 @@ function renderFeedback(result) {
   els.overallScore.textContent = `${result.score}/100`;
   els.transcriptText.textContent = result.transcript || "(nothing recognized)";
 
+  // These spans are about to be destroyed; a hover timer armed against the
+  // previous attempt's words must not outlive them.
+  stopSpeaking();
   els.feedbackWords.innerHTML = "";
   for (const word of result.word_feedback) {
     const span = document.createElement("span");
@@ -268,6 +333,12 @@ function renderFeedback(result) {
     const expected = (word.expected_phonemes || []).join(" ");
     const heard = (word.heard_phonemes || []).join(" ");
     span.title = `expected: ${expected || "–"} | heard: ${heard || "–"}`;
+    // What playback should say. `expected_word` first: the point of the
+    // feature is hearing the *correct* pronunciation, so a missing word
+    // plays what should have been said. An `extra` word only ever has a
+    // heard_word. Neither means an unpronounceable "?" — leave it unmarked.
+    const speakable = word.expected_word || word.heard_word;
+    if (speakable) span.dataset.speak = speakable;
     els.feedbackWords.appendChild(span);
     els.feedbackWords.appendChild(document.createTextNode(" "));
   }
@@ -319,6 +390,35 @@ els.difficultySelect.addEventListener("change", onFilterChange);
 els.categorySelect.addEventListener("change", onFilterChange);
 els.recordBtn.addEventListener("click", toggleRecording);
 els.submitBtn.addEventListener("click", submitAttempt);
+els.speakBtn.addEventListener("click", speakCurrentPhrase);
+
+// Delegated onto the container rather than wired per span: renderFeedback()
+// rebuilds those spans on every attempt, and mouseenter/mouseleave don't
+// bubble, so mouseover/mouseout are what reach us here.
+els.feedbackWords.addEventListener("mouseover", (e) => {
+  const target = e.target.closest("[data-speak]");
+  if (!target) return;
+  stopSpeaking();
+  // Delay the whole thing rather than debouncing the speech: a pointer merely
+  // crossing the line should never fire at all, not fire and get cut off.
+  state.hoverSpeakTimer = setTimeout(
+    () => speak(target.dataset.speak),
+    HOVER_SPEAK_DELAY_MS
+  );
+});
+
+els.feedbackWords.addEventListener("mouseout", stopSpeaking);
+
+// Hover doesn't exist on touch devices and isn't keyboard reachable; click
+// is what makes per-word playback available there. No delay — it's deliberate.
+els.feedbackWords.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-speak]");
+  if (target) speak(target.dataset.speak);
+});
+
+// Firefox keeps speaking across a navigation, and Logout is a plain <a href>;
+// don't leave a disembodied voice behind after the session ends.
+window.addEventListener("pagehide", stopSpeaking);
 
 els.userMenuBtn.addEventListener("click", (e) => {
   // Without this the document listener below sees the same click and

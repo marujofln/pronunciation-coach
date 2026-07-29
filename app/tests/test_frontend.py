@@ -564,6 +564,335 @@ def test_submit_refreshes_history_and_stats(
     assert len(api.requests_to("/api/attempts/stats")) == before_stats + 1
 
 
+# --- speech synthesis / speak + hover-to-listen --------------------------
+
+
+def stub_speech(page: Page) -> None:
+    """Replace the Web Speech API with a recorder, before any navigation.
+
+    Headless Chromium ships speechSynthesis but no voices, so the real API
+    accepts an utterance and silently does nothing observable. Swapping the
+    whole thing out is what makes the calls assertable.
+    """
+    page.add_init_script(
+        """
+        window.__tts = { spoken: [], langs: [], cancels: 0 };
+        // SpeechSynthesisUtterance is deliberately left real, so the tests
+        // exercise the genuine constructor and the lang assignment.
+        Object.defineProperty(window, 'speechSynthesis', {
+          configurable: true,
+          value: {
+            speak: (u) => {
+              window.__tts.spoken.push(u.text);
+              window.__tts.langs.push(u.lang);
+            },
+            cancel: () => { window.__tts.cancels += 1; },
+          },
+        });
+        """
+    )
+
+
+def tts(page: Page) -> dict:
+    return page.evaluate("window.__tts")
+
+
+def render_feedback(page: Page) -> None:
+    """Drive a full record → submit cycle so the feedback words exist."""
+    record_clip(page)
+    page.click("#submit-btn")
+    expect(page.locator("#results-card")).to_be_visible()
+
+
+# The two-word result the hover tests drive; short enough to hover precisely.
+TWO_WORD_RESULT = {
+    "score": 50.0,
+    "transcript": "she sells",
+    "word_feedback": [
+        {
+            "position": 0,
+            "expected_word": "she",
+            "heard_word": "she",
+            "expected_phonemes": ["SH", "IY"],
+            "heard_phonemes": ["SH", "IY"],
+            "status": "correct",
+            "word_score": 1.0,
+        },
+        {
+            "position": 1,
+            "expected_word": "seashells",
+            "heard_word": None,
+            "expected_phonemes": ["S", "IY"],
+            "heard_phonemes": [],
+            "status": "missing",
+            "word_score": 0.0,
+        },
+    ],
+}
+
+
+def test_speak_button_speaks_the_current_phrase(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+
+    page.click("#speak-btn")
+
+    recorded = tts(page)
+    assert recorded["spoken"] == [DEFAULT_PHRASE["text"]]
+    assert recorded["langs"] == ["en-US"]
+
+
+def test_speak_button_is_disabled_until_a_phrase_loads(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """Nothing to say before a phrase lands — and nothing stale to say after
+    one fails to, which would speak a phrase that isn't on screen."""
+    api.phrase = json_error(404)
+    stub_speech(page)
+    open_app(page, frontend_server)
+
+    expect(page.locator("#phrase-text")).to_have_text("Could not load a phrase.")
+    expect(page.locator("#speak-btn")).to_be_disabled()
+
+
+def test_speak_button_is_disabled_while_recording(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """Playback out the speakers feeds back into the mic and corrupts the
+    very audio about to be scored."""
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#speak-btn")).to_be_enabled()
+
+    page.click("#record-btn")
+    expect(page.locator("#record-btn")).to_have_text("■ Stop")
+    expect(page.locator("#speak-btn")).to_be_disabled()
+
+    page.wait_for_timeout(300)
+    page.click("#record-btn")
+
+    expect(page.locator("#speak-btn")).to_be_enabled()
+
+
+def test_hovering_a_word_while_recording_stays_silent(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """A disabled button doesn't stop hover, so speak() guards too."""
+    api.result = {**api.result, **TWO_WORD_RESULT}
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    render_feedback(page)
+
+    page.click("#record-btn")
+    expect(page.locator("#record-btn")).to_have_text("■ Stop")
+    page.hover("#feedback-words span:nth-of-type(1)")
+    page.wait_for_timeout(900)
+
+    assert tts(page)["spoken"] == []
+
+
+def test_rerendering_feedback_cancels_a_pending_hover(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """renderFeedback destroys the spans; the timer must not outlive them.
+
+    Driven directly rather than through a second record/submit cycle, because
+    startRecording() also stops speech — going the long way round would pass
+    on that guard instead of this one. The pointer stays put over the rebuilt
+    span, which legitimately re-arms the hover, so what this pins down is that
+    the word spoken is the *new* one and never the discarded one.
+    """
+    api.result = {**api.result, **TWO_WORD_RESULT}
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    render_feedback(page)
+
+    page.hover("#feedback-words span:nth-of-type(1)")
+    page.wait_for_timeout(200)
+    replacement = {**api.result, **TWO_WORD_RESULT}
+    replacement["word_feedback"] = [
+        {**replacement["word_feedback"][0], "expected_word": "afterwards"},
+        *replacement["word_feedback"][1:],
+    ]
+    page.evaluate("result => renderFeedback(result)", replacement)
+    page.wait_for_timeout(900)
+
+    assert "she" not in tts(page)["spoken"]
+
+
+def test_repeated_speak_clicks_cancel_the_previous_utterance(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """Without the leading cancel(), a second click queues behind the first."""
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+
+    # renderPhrase() cancels once on load (its stale-timer guard); zero the
+    # counter so this asserts about the clicks alone.
+    page.evaluate("window.__tts.cancels = 0")
+
+    page.click("#speak-btn")
+    page.click("#speak-btn")
+
+    recorded = tts(page)
+    assert recorded["spoken"] == [DEFAULT_PHRASE["text"]] * 2
+    assert recorded["cancels"] == 2  # one before each speak
+
+
+def test_hovering_a_feedback_word_speaks_it_after_the_delay(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    api.result = {**api.result, **TWO_WORD_RESULT}
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    render_feedback(page)
+
+    page.hover("#feedback-words span:nth-of-type(1)")
+    assert tts(page)["spoken"] == []  # nothing yet — the delay hasn't elapsed
+
+    page.wait_for_timeout(900)
+
+    assert tts(page)["spoken"] == ["she"]
+
+
+def test_brief_hover_over_a_feedback_word_speaks_nothing(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """The whole point of the delay: incidental mouse travel stays silent."""
+    api.result = {**api.result, **TWO_WORD_RESULT}
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    render_feedback(page)
+
+    page.hover("#feedback-words span:nth-of-type(1)")
+    page.wait_for_timeout(200)
+    page.hover("#overall-score")  # leave the word well before the delay
+    page.wait_for_timeout(900)
+
+    assert tts(page)["spoken"] == []
+
+
+def test_hovering_across_words_speaks_only_the_last_one(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    api.result = {**api.result, **TWO_WORD_RESULT}
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    render_feedback(page)
+
+    page.hover("#feedback-words span:nth-of-type(1)")
+    page.wait_for_timeout(200)
+    page.hover("#feedback-words span:nth-of-type(2)")
+    page.wait_for_timeout(900)
+
+    # The missing word speaks its expected_word — what should have been said.
+    assert tts(page)["spoken"] == ["seashells"]
+
+
+def test_clicking_a_feedback_word_speaks_it_immediately(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """Click is the touch/keyboard-reachable path; it skips the hover delay."""
+    api.result = {**api.result, **TWO_WORD_RESULT}
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    render_feedback(page)
+
+    page.click("#feedback-words span:nth-of-type(2)")
+
+    assert tts(page)["spoken"] == ["seashells"]
+
+
+def test_unpronounceable_word_is_not_speakable(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """A word with neither expected nor heard text renders "?" — don't say it."""
+    api.result = {
+        **api.result,
+        "word_feedback": [
+            {
+                "position": 0,
+                "expected_word": None,
+                "heard_word": None,
+                "expected_phonemes": [],
+                "heard_phonemes": [],
+                "status": "missing",
+                "word_score": None,
+            }
+        ],
+    }
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    render_feedback(page)
+
+    word = page.locator("#feedback-words span")
+    expect(word).to_have_text("?")
+    assert word.get_attribute("data-speak") is None
+
+    word.click()
+    word.hover()
+    page.wait_for_timeout(900)
+
+    assert tts(page)["spoken"] == []
+
+
+def test_a_new_phrase_cancels_a_pending_hover(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """The timer must not outlive the feedback card it was about to read."""
+    api.result = {**api.result, **TWO_WORD_RESULT}
+    stub_speech(page)
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    render_feedback(page)
+
+    page.hover("#feedback-words span:nth-of-type(1)")
+    page.wait_for_timeout(200)
+    page.click("#new-phrase-btn")
+    page.wait_for_timeout(900)
+
+    assert tts(page)["spoken"] == []
+
+
+def test_missing_speech_synthesis_degrades_silently(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """Not every browser has the Web Speech API; absence must not throw."""
+    api.result = {**api.result, **TWO_WORD_RESULT}
+    page.add_init_script(
+        """
+        delete window.SpeechSynthesisUtterance;
+        Object.defineProperty(window, 'speechSynthesis', {
+          configurable: true, value: undefined,
+        });
+        """
+    )
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    page.click("#speak-btn")
+    render_feedback(page)
+
+    page.hover("#feedback-words span:nth-of-type(1)")
+    page.wait_for_timeout(900)
+    page.click("#feedback-words span:nth-of-type(1)")
+
+    assert errors == []
+
+
 # --- history / loadHistory -----------------------------------------------
 
 

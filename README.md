@@ -10,6 +10,7 @@ A local web app for practicing English pronunciation. Pick a phrase, record your
   - *phonetics drills* — minimal-pairs (ship/sheep, think/sink), numbers-and-dates (thirteen/thirty), idioms
 - **Speech-to-text** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, CPU, int8) transcribes your recording locally, no cloud API calls.
 - **Phoneme-level scoring** — both the target phrase and your transcript are converted to ARPAbet phonemes ([g2p_en](https://github.com/Kyubyong/g2p)) and compared with phoneme edit-distance, so the score reflects actual pronunciation accuracy rather than just "did Whisper understand the words." Per-word feedback shows expected vs. heard phonemes.
+- **Hear it done right** — a speak button plays the target phrase, and after scoring you can hover (or tap) any word in the feedback to hear that word on its own, so a mispronounced word comes with a reference rather than just a red mark. Uses the browser's built-in Web Speech API — no extra service, no cloud call, no new dependency.
 - **Attempt history** — every recording, transcript, and score is saved to PostgreSQL per account, with a running average and per-phrase stats. Schema changes ship as [Alembic](https://alembic.sqlalchemy.org/) migrations.
 - **Saved preferences** — your difficulty and category filter selection is stored against your account and restored on your next visit, so you don't re-pick it every time.
 - **Authentication** — the whole app sits behind [Authentik](https://goauthentik.io/) (open-source OIDC), so history/stats are scoped to your own account.
@@ -182,7 +183,7 @@ app/
 └── tests/                      # pytest suite
 frontend/
 ├── index.html
-├── app.js            # recording, submission, results rendering
+├── app.js            # recording, submission, results rendering, TTS playback
 └── style.css
 alembic.ini
 Dockerfile
