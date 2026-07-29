@@ -8,6 +8,7 @@ const state = {
 
 const els = {
   difficultySelect: document.getElementById("difficulty-select"),
+  categorySelect: document.getElementById("category-select"),
   newPhraseBtn: document.getElementById("new-phrase-btn"),
   phraseText: document.getElementById("phrase-text"),
   phraseDifficulty: document.getElementById("phrase-difficulty"),
@@ -66,10 +67,70 @@ function toggleUserMenu() {
   }
 }
 
+async function loadCategories() {
+  try {
+    const res = await fetch("/api/phrases/categories");
+    if (!res.ok) return;
+    for (const category of await res.json()) {
+      const option = document.createElement("option");
+      option.value = category;
+      option.textContent = category;
+      els.categorySelect.appendChild(option);
+    }
+  } catch {
+    // non-fatal — the select keeps its "Any" option and filtering still works
+  }
+}
+
+async function loadPreferences() {
+  try {
+    const res = await fetch("/api/me/preferences");
+    if (!res.ok) return;
+    const prefs = await res.json();
+    // A saved value for an option that no longer exists would silently select
+    // nothing, so only apply what the select actually offers.
+    if (hasOption(els.difficultySelect, prefs.difficulty)) {
+      els.difficultySelect.value = prefs.difficulty;
+    }
+    if (hasOption(els.categorySelect, prefs.category)) {
+      els.categorySelect.value = prefs.category;
+    }
+  } catch {
+    // non-fatal — fall back to the "Any" defaults in the markup
+  }
+}
+
+function hasOption(select, value) {
+  if (!value) return false;
+  return [...select.options].some((option) => option.value === value);
+}
+
+async function savePreferences() {
+  try {
+    await fetch("/api/me/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        difficulty: els.difficultySelect.value || null,
+        category: els.categorySelect.value || null,
+      }),
+    });
+  } catch {
+    // non-fatal — the filter still applies to this session, it just won't stick
+  }
+}
+
+function onFilterChange() {
+  savePreferences();
+  loadRandomPhrase();
+}
+
 async function loadRandomPhrase() {
   const difficulty = els.difficultySelect.value;
+  const category = els.categorySelect.value;
   const url = new URL("/api/phrases/random", window.location.origin);
   if (difficulty) url.searchParams.set("difficulty", difficulty);
+  if (category) url.searchParams.set("category", category);
 
   els.phraseText.textContent = "Loading a phrase…";
   try {
@@ -243,7 +304,8 @@ async function loadStats() {
 }
 
 els.newPhraseBtn.addEventListener("click", loadRandomPhrase);
-els.difficultySelect.addEventListener("change", loadRandomPhrase);
+els.difficultySelect.addEventListener("change", onFilterChange);
+els.categorySelect.addEventListener("change", onFilterChange);
 els.recordBtn.addEventListener("click", toggleRecording);
 els.submitBtn.addEventListener("click", submitAttempt);
 
@@ -273,7 +335,15 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-loadCurrentUser();
-loadRandomPhrase();
-loadHistory();
-loadStats();
+async function init() {
+  loadCurrentUser();
+  loadHistory();
+  loadStats();
+  // Sequential on purpose: the saved category can only be selected once its
+  // <option> exists, and the first phrase must respect the restored filters.
+  await loadCategories();
+  await loadPreferences();
+  loadRandomPhrase();
+}
+
+init();

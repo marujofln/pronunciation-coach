@@ -8,6 +8,7 @@ A local web app for practicing English pronunciation. Pick a phrase, record your
 - **Speech-to-text** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, CPU, int8) transcribes your recording locally, no cloud API calls.
 - **Phoneme-level scoring** — both the target phrase and your transcript are converted to ARPAbet phonemes ([g2p_en](https://github.com/Kyubyong/g2p_en)) and compared with phoneme edit-distance, so the score reflects actual pronunciation accuracy rather than just "did Whisper understand the words." Per-word feedback shows expected vs. heard phonemes.
 - **Attempt history** — every recording, transcript, and score is saved per account, with a running average and per-phrase stats.
+- **Saved preferences** — your difficulty and category filter selection is stored against your account and restored on your next visit, so you don't re-pick it every time.
 - **Authentication** — the whole app sits behind [Authentik](https://goauthentik.io/) (open-source OIDC), so history/stats are scoped to your own account.
 - **No build step** — the frontend is plain HTML/CSS/JS served directly by FastAPI.
 
@@ -137,12 +138,12 @@ app/
 ├── config.py        # env-driven paths
 ├── db.py             # SQLModel engine/session
 ├── auth.py            # OIDC client, get_current_user/require_web_session, User upsert
-├── models.py            # Phrase, Attempt, User table models
+├── models.py            # Phrase, Attempt, User, UserPreference table models
 ├── schemas.py             # API request/response models
 ├── seed_data.py             # built-in practice phrases
 ├── ml.py                     # Whisper + G2p model loading
 ├── scoring.py                 # phoneme alignment & scoring algorithm
-├── routers/                    # /api/phrases, /api/attempts, /auth/*, /api/me
+├── routers/                    # /api/phrases, /api/attempts, /auth/*, /api/me[/preferences]
 └── tests/                        # pytest suite
 frontend/
 ├── index.html

@@ -60,3 +60,15 @@ class StatsRead(BaseModel):
 class UserRead(BaseModel):
     id: int
     email: str | None
+
+
+class PreferencesRead(BaseModel):
+    difficulty: Difficulty | None
+    category: str | None
+
+
+class PreferencesUpdate(BaseModel):
+    """A full replacement: an omitted field is stored as "Any", not left alone."""
+
+    difficulty: Difficulty | None = None
+    category: str | None = None

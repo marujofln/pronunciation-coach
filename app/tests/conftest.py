@@ -135,6 +135,8 @@ DEFAULT_PHRASE = {
     "category": "tongue twister",
     "created_at": "2026-01-01T00:00:00",
 }
+DEFAULT_CATEGORIES = ["food", "greetings", "tongue-twisters"]
+DEFAULT_PREFERENCES = {"difficulty": None, "category": None}
 DEFAULT_STATS = {"total_attempts": 0, "average_score": None, "per_phrase": []}
 DEFAULT_RESULT = {
     "attempt_id": 1,
@@ -157,6 +159,8 @@ class ApiMock:
     """
 
     me: Any = field(default_factory=lambda: dict(DEFAULT_ME))
+    preferences: Any = field(default_factory=lambda: dict(DEFAULT_PREFERENCES))
+    categories: Any = field(default_factory=lambda: list(DEFAULT_CATEGORIES))
     phrase: Any = field(default_factory=lambda: dict(DEFAULT_PHRASE))
     attempts: Any = field(default_factory=list)
     stats: Any = field(default_factory=lambda: dict(DEFAULT_STATS))
@@ -176,6 +180,10 @@ class ApiMock:
     def _slot_for(self, recorded: RecordedRequest) -> Any:
         if recorded.path == "/api/me":
             return self.me
+        if recorded.path == "/api/me/preferences":
+            return self.preferences
+        if recorded.path == "/api/phrases/categories":
+            return self.categories
         if recorded.path == "/api/phrases/random":
             return self.phrase
         if recorded.path == "/api/attempts/stats":

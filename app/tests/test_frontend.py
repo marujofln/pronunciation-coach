@@ -5,12 +5,14 @@ with every /api/* call intercepted (see the ApiMock fixture in conftest.py).
 The FastAPI app is never started here, so no Whisper/G2p model is ever loaded.
 """
 
+import json
 import re
 
 import pytest
 from playwright.sync_api import Page, expect
 
 from app.tests.conftest import (
+    DEFAULT_CATEGORIES,
     DEFAULT_PHRASE,
     ApiMock,
     json_error,
@@ -207,6 +209,83 @@ def test_difficulty_select_refetches_with_query_param(
     assert len(requests) == 2
     assert "difficulty=" not in requests[0].url
     assert "difficulty=hard" in requests[1].url
+
+
+# --- preferences / loadPreferences + savePreferences ---------------------
+
+
+def test_category_select_is_populated_from_the_api(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    open_app(page, frontend_server)
+
+    options = page.locator("#category-select option")
+    expect(options).to_have_count(len(DEFAULT_CATEGORIES) + 1)  # + the "Any" option
+    assert options.first.get_attribute("value") == ""
+    expect(page.locator("#category-select")).to_have_value("")
+
+
+def test_saved_preferences_are_restored_on_load(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    api.preferences = {"difficulty": "easy", "category": "food"}
+
+    open_app(page, frontend_server)
+
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    expect(page.locator("#difficulty-select")).to_have_value("easy")
+    expect(page.locator("#category-select")).to_have_value("food")
+
+    # The whole point: the first phrase already respects the restored filters,
+    # rather than being fetched unfiltered and then replaced.
+    requests = api.requests_to("/api/phrases/random")
+    assert len(requests) == 1
+    assert "difficulty=easy" in requests[0].url
+    assert "category=food" in requests[0].url
+
+
+def test_selecting_a_filter_persists_it(page: Page, frontend_server: str, api: ApiMock):
+    open_app(page, frontend_server)
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+
+    page.select_option("#difficulty-select", "hard")
+    page.select_option("#category-select", "greetings")
+
+    saved = api.requests_to("/api/me/preferences")
+    puts = [r for r in saved if r.method == "PUT"]
+    assert len(puts) == 2
+    assert json.loads(puts[0].post_data) == {"difficulty": "hard", "category": None}
+    assert json.loads(puts[1].post_data) == {
+        "difficulty": "hard",
+        "category": "greetings",
+    }
+
+
+def test_saved_category_no_longer_offered_is_ignored(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    """A category can disappear from the phrase table; don't select nothing."""
+    api.preferences = {"difficulty": None, "category": "retired-category"}
+
+    open_app(page, frontend_server)
+
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    expect(page.locator("#category-select")).to_have_value("")
+    assert "category=" not in api.requests_to("/api/phrases/random")[0].url
+
+
+def test_unreadable_preferences_fall_back_to_no_filters(
+    page: Page, frontend_server: str, api: ApiMock
+):
+    api.preferences = json_error(500)
+    api.categories = json_error(500)
+
+    open_app(page, frontend_server)
+
+    # A failed preference load must not stop the app from loading a phrase.
+    expect(page.locator("#phrase-text")).to_have_text(DEFAULT_PHRASE["text"])
+    expect(page.locator("#difficulty-select")).to_have_value("")
+    expect(page.locator("#category-select")).to_have_value("")
 
 
 def test_new_phrase_button_refetches(page: Page, frontend_server: str, api: ApiMock):

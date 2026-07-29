@@ -11,6 +11,7 @@ from app.ml import load_g2p, load_whisper_model
 from app.routers.attempts import router as attempts_router
 from app.routers.auth import router as auth_router
 from app.routers.phrases import router as phrases_router
+from app.routers.preferences import router as preferences_router
 from app.seed_data import seed_phrases
 
 
@@ -39,6 +40,7 @@ app.add_exception_handler(WebAuthRequired, redirect_to_login)
 app.include_router(phrases_router)
 app.include_router(attempts_router)
 app.include_router(auth_router)
+app.include_router(preferences_router)
 
 frontend_router = APIRouter(dependencies=[Depends(require_web_session)])
 frontend_router.frontend("/", directory=str(config.BASE_DIR / "frontend"))
