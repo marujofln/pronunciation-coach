@@ -1,3 +1,5 @@
+[Português (Brasil)](README_pt_BR.md)
+
 # Pronunciation Coach
 
 A local web app for practicing English pronunciation. Pick a phrase, record yourself saying it, and get instant feedback: an open Whisper model transcribes your recording, and a phoneme-level scoring pipeline compares it against the target phrase to highlight exactly which words (and sounds) you got right or wrong.
