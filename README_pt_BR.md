@@ -1,3 +1,5 @@
+[English](README.md)
+
 # Pronunciation Coach
 
 Um aplicativo web local para praticar a pronúncia do inglês. Escolha uma frase, grave você mesmo dizendo-a e receba feedback imediato: um modelo Whisper open source transcreve a gravação, e um pipeline de pontuação em nível de fonema compara o resultado com a frase-alvo para destacar exatamente quais palavras (e sons) você acertou ou errou.
