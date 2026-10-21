@@ -27,6 +27,8 @@ A forma preferida de rodar o app é via Docker — não exige nada instalado loc
 **Requisitos:** Docker e Docker Compose. A única configuração é uma senha de banco de dados, que não tem valor padrão — a stack se recusa a subir em vez de cair em algo adivinhável.
 
 ```bash
+git clone https://github.com/marujofln/pronunciation-coach.git
+cd pronunciation-coach
 echo "POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')" >> .env
 echo "HOST_UID=$(id -u)" >> .env
 echo "HOST_GID=$(id -g)" >> .env

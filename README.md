@@ -27,6 +27,8 @@ The preferred way to run the app is via Docker — it needs nothing installed lo
 **Requirements:** Docker and Docker Compose. The only configuration is a database password, which has no default — the stack refuses to start rather than fall back to something guessable.
 
 ```bash
+git clone https://github.com/marujofln/pronunciation-coach.git
+cd pronunciation-coach
 echo "POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')" >> .env
 echo "HOST_UID=$(id -u)" >> .env
 echo "HOST_GID=$(id -g)" >> .env
